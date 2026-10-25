@@ -6,7 +6,7 @@
   :root { --accent: #3b82f6; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
-  .card { position: absolute; inset: 6px; border-radius: 24px; overflow: hidden; background: rgba(36, 36, 40, 0.94); color: #fff; display: flex; gap: 12px; padding: 12px; -webkit-app-region: drag; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14) inset; }
+  .card { position: absolute; inset: 6px; border-radius: 24px; overflow: hidden; background: rgba(36, 36, 40, 0.94); color: #fff; display: flex; gap: 12px; padding: 12px; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14) inset; }
   .tint { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(34px) saturate(1.6); opacity: 0.38; transform: scale(1.2); }
   .scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,20,24,0.15), rgba(20,20,24,0.45)); }
   .art { position: relative; width: 114px; height: 114px; flex: 0 0 114px; border-radius: 14px; object-fit: cover; background: #2a2a2e; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
@@ -26,14 +26,14 @@
   .tools { display: none; gap: 4px; }
   .card:hover .glyph { display: none; }
   .card:hover .tools { display: flex; }
-  button { -webkit-app-region: no-drag; border: none; background: transparent; color: #fff; cursor: pointer; padding: 0; font: inherit; }
+  button { border: none; background: transparent; color: #fff; cursor: pointer; padding: 0; font: inherit; }
   .tool { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; }
   .tool:hover { background: rgba(255,255,255,0.28); }
   .transport { display: flex; align-items: center; justify-content: center; gap: 30px; margin-top: 4px; }
   .transport button { width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; transition: transform 120ms ease, opacity 120ms ease; opacity: 0.95; }
   .transport button:hover { opacity: 1; transform: scale(1.08); }
   .transport button:active { transform: scale(0.94); }
-  .progress { -webkit-app-region: no-drag; padding-top: 2px; }
+  .progress { padding-top: 2px; }
   .bar { height: 14px; display: flex; align-items: center; cursor: pointer; position: relative; }
   .bar::before { content: ''; position: absolute; left: 0; right: 0; height: 5px; border-radius: 5px; background: rgba(255,255,255,0.2); }
   .fill { position: relative; height: 5px; width: 0; border-radius: 5px; background: var(--accent); }
@@ -116,6 +116,18 @@
     $('t-left').textContent = dur ? `-${fmt(dur - pos)}` : '-0:00';
   });
   window.miniPlayer.onMode((m) => document.body.classList.toggle('compact', !!(m && m.compact)));
+
+    // The card is not an OS drag region (those swallow hover and clicks), so dragging is done by hand.
+    let drag = false;
+    document.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || e.target.closest('button, .bar')) return;
+      drag = true;
+      window.miniPlayer.drag('start', e.screenX, e.screenY);
+    });
+    document.addEventListener('mousemove', (e) => { if (drag) window.miniPlayer.drag('move', e.screenX, e.screenY); });
+    const stopDrag = () => { if (drag) { drag = false; window.miniPlayer.drag('end', 0, 0); } };
+    document.addEventListener('mouseup', stopDrag);
+    window.addEventListener('blur', stopDrag);
 
   $('b-play').onclick = () => window.miniPlayer.command('toggle');
   $('b-prev').onclick = () => window.miniPlayer.command('prev');

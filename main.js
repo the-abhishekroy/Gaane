@@ -468,12 +468,29 @@ function runGUI() {
   ipcMain.on('mini-open', () => {
     showMini();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
-      mainWindow.minimize();
+      // the frameless main window cannot be miniaturised through the API, so tuck it away by hiding it
+      if (mainWindow.isFullScreen()) {
+        mainWindow.once('leave-full-screen', () => { if (miniWin && !miniWin.isDestroyed() && miniWin.isVisible()) mainWindow.hide(); });
+        mainWindow.setFullScreen(false);
+      } else {
+        mainWindow.hide();
+      }
     }
   });
   ipcMain.on('mini-state', (e, d) => {
     if (miniWin && !miniWin.isDestroyed() && miniWin.isVisible()) miniWin.webContents.send('mini-state', d);
+  });
+  let miniDrag = null;
+  ipcMain.on('mini-drag', (e, d) => {
+    if (!miniWin || miniWin.isDestroyed() || !d) return;
+    if (d.phase === 'start') {
+      const b = miniWin.getBounds();
+      miniDrag = { sx: d.x, sy: d.y, bx: b.x, by: b.y };
+    } else if (d.phase === 'move' && miniDrag) {
+      miniWin.setPosition(Math.round(miniDrag.bx + d.x - miniDrag.sx), Math.round(miniDrag.by + d.y - miniDrag.sy));
+    } else if (d.phase === 'end') {
+      miniDrag = null;
+    }
   });
   ipcMain.on('mini-cmd', (e, d) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini-command', d);
@@ -874,6 +891,7 @@ function runGUI() {
         if (tutorialDone()) require('./updater').initUpdater(() => mainWindow);
         app.on('activate', () => {
           if (BrowserWindow.getAllWindows().length === 0) createWindow();
+          else if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) showMainNormal(false);
         });
       });
 
