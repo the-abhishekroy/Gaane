@@ -324,13 +324,26 @@ function runGUI() {
   // that draws the music-reactive border light while ambient mode is open.
   let edgeOverlay = null;
   let edgeNotch = null;
+  // Exact notch position from macOS (NSScreen auxiliary areas), so the light keeps an even gap on both sides.
   app.whenReady().then(() => {
-    try {
-      const d = screen.getPrimaryDisplay();
-      const bar = d.workArea.y - d.bounds.y;
-      // notched MacBooks have a taller menu bar (37pt) than other displays (24pt)
-      if (process.platform === 'darwin' && bar >= 32) edgeNotch = { w: Math.round(d.bounds.width * 0.115), h: bar - 1 };
-    } catch (_) {}
+    if (process.platform !== 'darwin') return;
+    const script = "ObjC.import('AppKit');const s=$.NSScreen.screens.objectAtIndex(0);const f=s.frame;const l=s.auxiliaryTopLeftArea;const r=s.auxiliaryTopRightArea;JSON.stringify({w:f.size.width,top:s.safeAreaInsets.top,leftW:l.size.width,rightW:r.size.width});";
+    execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], { timeout: 8000 }, (err, out) => {
+      try {
+        if (err) throw err;
+        const n = JSON.parse(String(out).trim());
+        if (n.top > 0 && n.leftW > 0 && n.rightW > 0 && n.leftW + n.rightW < n.w) {
+          edgeNotch = { x0: n.leftW, x1: n.w - n.rightW, h: n.top };
+          if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
+        }
+      } catch (e) {
+        try {
+          const d = screen.getPrimaryDisplay();
+          const bar = d.workArea.y - d.bounds.y;
+          if (bar >= 32) { const nw = Math.round(d.bounds.width * 0.122); edgeNotch = { x0: Math.round((d.bounds.width - nw) / 2), x1: Math.round((d.bounds.width + nw) / 2), h: bar }; }
+        } catch (_) {}
+      }
+    });
   });
 
   let edgeWanted = false;

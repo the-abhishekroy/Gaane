@@ -14577,7 +14577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const hi = Math.max(lo + 1, Math.floor(Math.pow((i + 1) / 32, 1.7) * n));
           let sum = 0;
           for (let k = lo; k < hi && k < n; k++) sum += edgeFreq[k];
-          bands[i] = Math.min(1, Math.pow(sum / ((hi - lo) * 255), 1.35) * 1.5);
+          bands[i] = Math.min(1, Math.pow(sum / ((hi - lo) * 255), 1.1) * 1.9);
         }
       }
       if (window.electronAPI && window.electronAPI.sendEdgeFrame) window.electronAPI.sendEdgeFrame({ bands, a: edgeColorA, b: edgeColorB });

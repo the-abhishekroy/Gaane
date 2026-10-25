@@ -15,79 +15,116 @@
   const ctx = canvas.getContext('2d');
   const BANDS = 32;
   const LINE = 3;                       // one line width everywhere, notch included
+  const SEG = 120;
   let cfg = { notch: null };
-  let colors = { a: [255, 60, 130], b: [120, 90, 255] };
+  let baseHue = 340;
   const target = new Float32Array(BANDS);
-  let low = 0, mid = 0, high = 0, energy = 0;
-  let W = 0, H = 0, dpr = 1, path = null;
-  let tmp, tctx, glowA, gaCtx, glowB, gbCtx;
+  const lv = new Float32Array(BANDS);
+  let low = 0, mid = 0, high = 0, energy = 0, flash = 0, prevLow = 0;
+  let W = 0, H = 0, dpr = 1, path = null, segs = [];
+  let ring, rctx, glowA, gaCtx, glowB, gbCtx, live, lvCtx, inten, inCtx, bloom, blCtx, maskA, maskACtx, maskB, maskBCtx;
   let angle = 0;
 
-  const hex = (h) => {
+  const layer = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+  const hexToHue = (h) => {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '').trim());
     if (!m) return null;
     const n = parseInt(m[1], 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    if (!d) return null;
+    let hh = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (hh * 60 + 360) % 360;
   };
+  const hsl = (h, s, l) => `hsl(${((h % 360) + 360) % 360},${s}%,${l}%)`;
 
-  // One closed path: rounded like the display and curving around the notch.
-  function buildPath() {
-    const p = new Path2D();
+  // Geometry: one closed path (crisp ring) plus the same outline sampled into pieces for the music map.
+  function build() {
     const inset = LINE / 2 + 0.5;
     const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
     const r = 18;
-    p.moveTo(x0 + r, y0);
+    const p = new Path2D();
+    const pts = [];
+    const arc = (cx, cy, rad, a0, a1, ccw) => {
+      p.arc(cx, cy, rad, a0, a1, !!ccw);
+      const n = 10;
+      for (let i = 1; i <= n; i++) {
+        const a = a0 + ((a1 - a0) * i) / n;
+        pts.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a)]);
+      }
+    };
+    const line = (xa, ya, xb, yb) => {
+      p.lineTo(xb, yb);
+      const n = Math.max(1, Math.round(Math.hypot(xb - xa, yb - ya) / 6));
+      for (let i = 1; i <= n; i++) pts.push([xa + ((xb - xa) * i) / n, ya + ((yb - ya) * i) / n]);
+    };
+    p.moveTo(x0 + r, y0); pts.push([x0 + r, y0]);
     if (cfg.notch) {
-      const m = 2 + LINE / 2, rn = 9;
-      const cx = W / 2;
-      const nl = cx - cfg.notch.w / 2 - m, nr = cx + cfg.notch.w / 2 + m, nb = cfg.notch.h + m;
-      p.lineTo(nl - rn, y0);
-      p.arc(nl - rn, y0 + rn, rn, -Math.PI / 2, 0);
-      p.lineTo(nl, nb - rn);
-      p.arc(nl + rn, nb - rn, rn, Math.PI, Math.PI / 2, true);
-      p.lineTo(nr - rn, nb);
-      p.arc(nr - rn, nb - rn, rn, Math.PI / 2, 0, true);
-      p.lineTo(nr, y0 + rn);
-      p.arc(nr + rn, y0 + rn, rn, Math.PI, Math.PI * 1.5);
+      const m = 5 + LINE / 2, rn = 12;
+      const nl = cfg.notch.x0 - m, nr = cfg.notch.x1 + m, nb = cfg.notch.h + m;
+      line(x0 + r, y0, nl - rn, y0);
+      arc(nl - rn, y0 + rn, rn, -Math.PI / 2, 0);
+      line(nl, y0 + rn, nl, nb - rn);
+      arc(nl + rn, nb - rn, rn, Math.PI, Math.PI / 2, true);
+      line(nl + rn, nb, nr - rn, nb);
+      arc(nr - rn, nb - rn, rn, Math.PI / 2, 0, true);
+      line(nr, nb - rn, nr, y0 + rn);
+      arc(nr + rn, y0 + rn, rn, Math.PI, Math.PI * 1.5);
+      line(nr + rn, y0, x1 - r, y0);
+    } else {
+      line(x0 + r, y0, x1 - r, y0);
     }
-    p.lineTo(x1 - r, y0);
-    p.arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
-    p.lineTo(x1, y1 - r);
-    p.arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
-    p.lineTo(x0 + r, y1);
-    p.arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
-    p.lineTo(x0, y0 + r);
-    p.arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
+    arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
+    line(x1, y0 + r, x1, y1 - r);
+    arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
+    line(x1 - r, y1, x0 + r, y1);
+    arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
+    line(x0, y1 - r, x0, y0 + r);
+    arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
     p.closePath();
     path = p;
-  }
 
-  const layer = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const L = cum[cum.length - 1];
+    segs = [];
+    let j = 0;
+    for (let k = 0; k < SEG; k++) {
+      const s0 = (k / SEG) * L, s1 = ((k + 1) / SEG) * L;
+      while (j < pts.length - 1 && cum[j + 1] < s0) j++;
+      const poly = [pts[j]];
+      for (let q = j + 1; q < pts.length && cum[q] <= s1; q++) poly.push(pts[q]);
+      if (poly.length < 2) poly.push(pts[Math.min(pts.length - 1, j + 1)]);
+      segs.push({ poly, s: (k + 0.5) / SEG });
+    }
+  }
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    tmp = layer(W * dpr, H * dpr); tctx = tmp.getContext('2d');
+    ring = layer(W * dpr, H * dpr); rctx = ring.getContext('2d');
+    live = layer(W * dpr, H * dpr); lvCtx = live.getContext('2d');
     glowA = layer(W / 5, H / 5); gaCtx = glowA.getContext('2d');
     glowB = layer(W / 14, H / 14); gbCtx = glowB.getContext('2d');
-    buildPath();
+    inten = layer(W / 5, H / 5); inCtx = inten.getContext('2d');
+    bloom = layer(W / 5, H / 5); blCtx = bloom.getContext('2d');
+    maskA = layer(W / 5, H / 5); maskACtx = maskA.getContext('2d');
+    maskB = layer(W / 14, H / 14); maskBCtx = maskB.getContext('2d');
+    build();
   }
   window.addEventListener('resize', resize);
 
   window.edgeOverlay.onConfig((c) => { cfg = c || cfg; resize(); });
   window.edgeOverlay.onFrame((d) => {
     if (!d) return;
-    const a = hex(d.a), b = hex(d.b);
-    if (a) colors.a = a;
-    if (b) colors.b = b;
+    const h = hexToHue(d.a);
+    if (h !== null) baseHue = h;
     if (Array.isArray(d.bands)) for (let i = 0; i < BANDS; i++) target[i] = d.bands[i] || 0;
   });
 
   const avg = (arr, from, to) => { let s = 0; for (let i = from; i < to; i++) s += arr[i]; return s / (to - from); };
-  const follow = (cur, t) => cur + (t - cur) * (t > cur ? 0.5 : 0.08);
-  const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
-  const rgb = (c) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+  const follow = (cur, t, up, down) => cur + (t - cur) * (t > cur ? up : down);
 
   let last = 0;
   function draw(ts) {
@@ -96,49 +133,100 @@
     if (ts - last < 22) return;
     last = ts;
 
-    low = follow(low, avg(target, 0, 8));
-    mid = follow(mid, avg(target, 8, 20));
-    high = follow(high, avg(target, 20, 32));
-    energy = follow(energy, low * 0.55 + mid * 0.3 + high * 0.15);
+    for (let i = 0; i < BANDS; i++) lv[i] = follow(lv[i], target[i], 0.7, 0.16);
+    low = follow(low, avg(lv, 0, 8), 0.7, 0.14);
+    mid = follow(mid, avg(lv, 8, 20), 0.7, 0.14);
+    high = follow(high, avg(lv, 20, 32), 0.7, 0.14);
+    energy = follow(energy, low * 0.5 + mid * 0.35 + high * 0.15, 0.6, 0.1);
+    flash = Math.max(flash * 0.88, Math.max(0, low - prevLow) * 3);
+    prevLow = low;
 
-    // the colours flow around the screen faster when the music is busier
-    angle += dt * (0.12 + 0.9 * high + 0.5 * mid);
+    // colours travel around the screen, faster and wider when the music is busier
+    angle += dt * (0.3 + 2.4 * high + 1.4 * mid + 1.2 * flash);
+    const spread = 40 + 55 * energy;
+    const sat = 88, light = 56 + 10 * energy;
 
-    const glow = mix(colors.a, [255, 255, 255], 0.18 * energy);
-    const A = mix(colors.a, [255, 255, 255], 0.10 * low);
-    const B = mix(colors.b, [255, 255, 255], 0.10 * mid);
+    // 1. crisp ring, one width everywhere, painted with a smooth moving colour sweep
+    rctx.setTransform(1, 0, 0, 1, 0, 0);
+    rctx.clearRect(0, 0, ring.width, ring.height);
+    rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const g = rctx.createConicGradient(angle, W / 2, H / 2);
+    const stops = 8;
+    for (let i = 0; i <= stops; i++) {
+      const t = i / stops;
+      g.addColorStop(t, hsl(baseHue + spread * Math.sin(t * Math.PI * 4), sat, light));
+    }
+    rctx.strokeStyle = g;
+    rctx.lineWidth = LINE;
+    rctx.lineJoin = 'round';
+    rctx.stroke(path);
 
-    tctx.clearRect(0, 0, tmp.width, tmp.height);
-    tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const g = tctx.createConicGradient(angle, W / 2, H / 2);
-    g.addColorStop(0, rgb(A));
-    g.addColorStop(0.25, rgb(B));
-    g.addColorStop(0.5, rgb(A));
-    g.addColorStop(0.75, rgb(B));
-    g.addColorStop(1, rgb(A));
-    tctx.strokeStyle = g;
-    tctx.lineWidth = LINE;
-    tctx.lineJoin = 'round';
-    tctx.stroke(path);
+    // 2. music map: how strongly each stretch of the border is being driven (smooth, no beads)
+    inCtx.setTransform(1, 0, 0, 1, 0, 0);
+    inCtx.clearRect(0, 0, inten.width, inten.height);
+    inCtx.filter = 'none';
+    inCtx.lineCap = 'butt';
+    inCtx.lineJoin = 'round';
+    inCtx.setTransform(inten.width / W, 0, 0, inten.height / H, 0, 0);
+    inCtx.lineWidth = 30;
+    for (const sg of segs) {
+      const t = Math.abs((sg.s * 2) % 2 - 1);
+      const v = Math.min(1, lv[Math.min(BANDS - 1, Math.floor(t * (BANDS - 1)))] * 1.15 + flash * 0.25);
+      inCtx.strokeStyle = `rgba(255,255,255,${v.toFixed(3)})`;
+      inCtx.beginPath();
+      inCtx.moveTo(sg.poly[0][0], sg.poly[0][1]);
+      for (let i = 1; i < sg.poly.length; i++) inCtx.lineTo(sg.poly[i][0], sg.poly[i][1]);
+      inCtx.stroke();
+    }
+    // soften the map across neighbouring pieces
+    blCtx.setTransform(1, 0, 0, 1, 0, 0);
+    blCtx.clearRect(0, 0, bloom.width, bloom.height);
+    blCtx.filter = 'blur(5px)';
+    blCtx.drawImage(inten, 0, 0);
+    blCtx.filter = 'none';
 
+    // 3. compose
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 0.8 + 0.2 * energy;
-    ctx.drawImage(tmp, 0, 0);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(ring, 0, 0);
 
-    // soft bloom: the same line shrunk, blurred and stretched back
     gaCtx.clearRect(0, 0, glowA.width, glowA.height);
     gaCtx.filter = 'blur(2.5px)';
-    gaCtx.drawImage(tmp, 0, 0, glowA.width, glowA.height);
+    gaCtx.drawImage(ring, 0, 0, glowA.width, glowA.height);
     gbCtx.clearRect(0, 0, glowB.width, glowB.height);
     gbCtx.filter = 'blur(1.5px)';
-    gbCtx.drawImage(tmp, 0, 0, glowB.width, glowB.height);
+    gbCtx.drawImage(ring, 0, 0, glowB.width, glowB.height);
+
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = 0.75 + 0.25 * energy;
+    ctx.globalAlpha = 0.35;
     ctx.drawImage(glowA, 0, 0, canvas.width, canvas.height);
-    ctx.globalAlpha = 0.5 + 0.5 * energy;
+    ctx.globalAlpha = 0.2;
     ctx.drawImage(glowB, 0, 0, canvas.width, canvas.height);
+
+    // music-driven bloom: the blurred ring, kept only where the map is lit, so waves of light run along the border
+    for (const [src, tmpL, tc, a] of [[glowA, maskA, maskACtx, 1.0], [glowB, maskB, maskBCtx, 0.9]]) {
+      tc.globalCompositeOperation = 'source-over';
+      tc.clearRect(0, 0, tmpL.width, tmpL.height);
+      tc.drawImage(src, 0, 0);
+      tc.globalCompositeOperation = 'destination-in';
+      tc.drawImage(bloom, 0, 0, tmpL.width, tmpL.height);
+      ctx.globalAlpha = Math.min(1, a * (0.5 + 1.4 * energy));
+      ctx.drawImage(tmpL, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(tmpL, 0, 0, canvas.width, canvas.height);
+    }
+
+    // brighter core where the music hits
+    lvCtx.setTransform(1, 0, 0, 1, 0, 0);
+    lvCtx.globalCompositeOperation = 'source-over';
+    lvCtx.clearRect(0, 0, live.width, live.height);
+    lvCtx.drawImage(ring, 0, 0);
+    lvCtx.globalCompositeOperation = 'destination-in';
+    lvCtx.drawImage(bloom, 0, 0, live.width, live.height);
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(live, 0, 0);
+
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
