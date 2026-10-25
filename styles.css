@@ -7935,3 +7935,21 @@ body.vibrant .right-panel { background: color-mix(in srgb, var(--md-sys-color-su
 body.vibrant .playbar, body.vibrant footer.playbar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 66%, transparent); }
 body.vibrant .top-nav, body.vibrant .titlebar { background: transparent; }
 body.vibrant .tv-karaoke { background: #000; }
+
+/* ---- Your listening: one consistent card system that fits the page width ---- */
+.story-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; overflow: visible; padding: 0; margin: 0 0 12px; }
+.story-card { flex: none; width: auto; height: 168px; padding: 14px 16px; border-radius: 20px; }
+.story-kicker { font-size: 9px; letter-spacing: 0.12em; }
+.story-top svg { width: 20px; height: 17px; }
+.story-big { font-size: clamp(18px, 1.7vw, 24px); }
+.story-label { font-size: 9.5px; }
+.story-foot-title { font-size: 11px; }
+.story-foot-sub { font-size: 11px; }
+.story-since b { font-size: 12px; }
+.story-since small { font-size: 7px; }
+.stat-cards { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0 0 30px; }
+.stat-card { height: 92px; padding: 14px 16px; justify-content: center; border-radius: 20px; background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 80%, transparent); box-shadow: 0 10px 30px rgba(0,0,0,0.18); }
+.stat-value { font-size: clamp(18px, 1.7vw, 24px); font-weight: 800; }
+.stat-label { font: 600 9.5px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; }
+.stat-note { font-size: 11px; }
+#view-stats .yt-shelf-head h3 { font-size: calc(20px * var(--font-scale, 1)); }
