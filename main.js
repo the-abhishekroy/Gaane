@@ -220,7 +220,8 @@ function runGUI() {
       height: initialBounds.height,
       minWidth: 360,
                                    minHeight: 500,
-                                   backgroundColor: firstRun ? '#8d5ef2' : '#000000',
+                                   backgroundColor: process.platform === 'darwin' ? '#00000000' : (firstRun ? '#8d5ef2' : '#000000'),
+                                   ...(process.platform === 'darwin' ? { vibrancy: 'under-window', visualEffectState: 'active' } : {}),
                                    title: 'Gaane',
                                    icon: path.join(__dirname, 'assets', 'icon.png'),
                                    frame: false,
@@ -256,7 +257,7 @@ function runGUI() {
         if (detail && detail.launcher) installLauncher();
         if (!mainWindow || mainWindow.isDestroyed()) return;
         const result = detail && !detail.skipped ? detail : null;
-        mainWindow.setBackgroundColor('#000000');
+        mainWindow.setBackgroundColor(process.platform === 'darwin' ? '#00000000' : '#000000');
         mainWindow.webContents.once('did-finish-load', () => { if (result) mainWindow.webContents.send('welcome-result', result); });
         mainWindow.loadFile(path.join(__dirname, 'index.html'));
         require('./updater').initUpdater(() => mainWindow);

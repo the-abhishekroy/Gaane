@@ -7924,3 +7924,14 @@ body.mini #edge-glow { border-radius: 10px; }
 .story-since { display: flex; flex-direction: column; align-items: flex-end; flex: 0 0 auto; }
 .story-since small { font: 600 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; opacity: 0.7; }
 .story-since b { font: 800 15px/1.2 ui-monospace, monospace; letter-spacing: 0.08em; }
+
+/* macOS: the window is a frosted pane, so the desktop wallpaper shows through as a plain blur behind every screen
+   (the fullscreen ambient view keeps its own black backdrop) */
+html:has(body.vibrant), body.vibrant { background: transparent !important; }
+body.vibrant .bg-mesh-layer, body.vibrant .m3-organic-bg, body.vibrant #custom-bg, body.vibrant #cover-bg, body.vibrant .home-ambient { display: none !important; }
+body.vibrant .sidebar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 62%, transparent); }
+body.vibrant .main-content { background: color-mix(in srgb, var(--md-sys-color-surface-container-low) 58%, transparent); }
+body.vibrant .right-panel { background: color-mix(in srgb, var(--md-sys-color-surface-container-low) 58%, transparent); }
+body.vibrant .playbar, body.vibrant footer.playbar { background: color-mix(in srgb, var(--md-sys-color-surface-container) 66%, transparent); }
+body.vibrant .top-nav, body.vibrant .titlebar { background: transparent; }
+body.vibrant .tv-karaoke { background: #000; }

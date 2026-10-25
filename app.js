@@ -28,7 +28,7 @@
   try {
     const api = window.electronAPI;
     const isMac = (api && typeof api.isMac === 'boolean') ? api.isMac : /Mac/.test(navigator.platform || '');
-    if (isMac) document.body.classList.add('platform-mac');
+    if (isMac) document.body.classList.add('platform-mac', 'vibrant');
   } catch (e) {}
 })();
 
