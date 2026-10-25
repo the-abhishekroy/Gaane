@@ -3,12 +3,13 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   serverToken: (() => {
-    const arg = process.argv.find((a) => a.startsWith('--riff-token='));
-    return arg ? arg.slice('--riff-token='.length) : '';
+    const arg = process.argv.find((a) => a.startsWith('--gaane-token='));
+    return arg ? arg.slice('--gaane-token='.length) : '';
   })(),
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
+  setFullscreen: (v) => ipcRenderer.send('window-set-fullscreen', !!v),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
   getGpuCompositing: () => ipcRenderer.invoke('get-gpu-compositing'),
   pickMedia: () => ipcRenderer.invoke('pick-media'),
@@ -58,6 +59,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMediaCommand: (cb) => ipcRenderer.on('media-command', (e, cmd) => cb(cmd)),
   toggleMiniWindow: () => ipcRenderer.invoke('toggle-mini-window'),
   isWindows: process.platform === 'win32',
+  isMac: process.platform === 'darwin',
   setMediaKeys: (v) => ipcRenderer.send('set-media-keys', v),
   mediaKeysActive: () => ipcRenderer.send('media-keys-active'),
   welcomeFinish: (detail) => ipcRenderer.send('welcome-finish', detail),

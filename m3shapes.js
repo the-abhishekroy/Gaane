@@ -80,7 +80,7 @@
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   }
 
-  window.RiffShapes = {
+  window.GaaneShapes = {
     K: SHAPE_K,
     HOLD_MS: 2000,
     MORPH_MS: 1250,

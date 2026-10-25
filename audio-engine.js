@@ -2,7 +2,7 @@
 (function (global) {
   'use strict';
 
-  class RiffAudioEngine {
+  class GaaneAudioEngine {
     constructor() {
       this.ctx = null;
       this.mediaSource = null;
@@ -819,6 +819,6 @@
     }
   }
 
-  global.RiffAudioEngine = RiffAudioEngine;
+  global.GaaneAudioEngine = GaaneAudioEngine;
 
 })(typeof window !== 'undefined' ? window : globalThis);

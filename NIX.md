@@ -1,10 +1,10 @@
-# Riff on Nix
+# Gaane on Nix
 
 The `flake.nix` exposes three things:
 
 - `packages.riff` (also `packages.default`) — the installable app
 - `overlays.default` — an overlay for nixpkgs
-- `devShells.default` — a shell for hacking on Riff
+- `devShells.default` — a shell for hacking on Gaane
 
 ## Install into your system config (Flakes)
 
@@ -87,7 +87,7 @@ nix profile install .
 nix run .
 ```
 
-After installing, `riff` is on your `PATH` and a `Riff` desktop entry + icon are registered.
+After installing, `riff` is on your `PATH` and a `Gaane` desktop entry + icon are registered.
 
 ## Development shell
 
@@ -101,5 +101,5 @@ npm start
 
 ## Notes
 
-- The package wraps the nixpkgs `electron` with the app directory and puts `yt-dlp` and `ffmpeg` on `PATH`, so Riff finds them instead of self-downloading.
+- The package wraps the nixpkgs `electron` with the app directory and puts `yt-dlp` and `ffmpeg` on `PATH`, so Gaane finds them instead of self-downloading.
 - `npmDepsHash` in `flake.nix` must be updated whenever `package.json`/`package-lock.json` change. Rebuild with a wrong/placeholder hash and copy the reported `got:` value, or regenerate it with `nix-prefetch-npm-deps` / `prefetch-npm-deps`.

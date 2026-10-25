@@ -4,16 +4,28 @@ const path = require('path');
 
 const IS_WIN = process.platform === 'win32';
 
+function migrateLegacyDir() {
+  const oldDir = IS_WIN
+    ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Riff')
+    : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support', 'Riff') : null;
+  if (!oldDir) return;
+  const newDir = oldDir.replace(/Riff$/, 'Gaane');
+  try {
+    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) fs.cpSync(oldDir, newDir, { recursive: true });
+  } catch (e) {}
+}
+migrateLegacyDir();
+
 const DEFAULT_DATA_DIR = IS_WIN
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Riff')
+  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Gaane')
   : process.platform === 'darwin'
-  ? path.join(os.homedir(), 'Library', 'Application Support', 'Riff')
+  ? path.join(os.homedir(), 'Library', 'Application Support', 'Gaane')
   : path.join(os.homedir(), '.cache', 'devsize');
 
 const CONFIG_DIR = IS_WIN
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Riff')
+  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Gaane')
   : process.platform === 'darwin'
-  ? path.join(os.homedir(), 'Library', 'Application Support', 'Riff')
+  ? path.join(os.homedir(), 'Library', 'Application Support', 'Gaane')
   : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'devsize');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 
@@ -74,7 +86,7 @@ const METADATA_PATH = path.join(DATA_DIR, 'metadata.json');
 const LIBRARY_DIR = path.join(DATA_DIR, 'library');
 const LIBRARY_PATH = path.join(DATA_DIR, 'library.json');
 const BIN_DIR = path.join(DATA_DIR, 'bin');
-const TUTORIAL_MARKER = IS_WIN ? 'C:\\Riff\\.rifftutorial' : path.join(os.homedir(), '.rifftutorial');
+const TUTORIAL_MARKER = IS_WIN ? 'C:\\Gaane\\.rifftutorial' : path.join(os.homedir(), '.rifftutorial');
 const TUTORIAL_MARKER_FALLBACK = path.join(DATA_DIR, '.rifftutorial');
 const STARTUP_PATH = path.join(DATA_DIR, 'startup.json');
 function readStartupConfig() { try { return JSON.parse(fs.readFileSync(STARTUP_PATH, 'utf8')) || {}; } catch (e) { return {}; } }

@@ -7682,3 +7682,115 @@ body.multi-select-on .track-row.selectable .track-row-actions {
   opacity: 0.4;
   cursor: default;
 }
+
+
+/* macOS: native traffic lights replace the custom window controls */
+body.platform-mac .titlebar { padding-left: 84px; }
+body.platform-mac.mini .titlebar { padding-left: 76px; }
+body.platform-mac #btn-minimize,
+body.platform-mac #btn-maximize,
+body.platform-mac #btn-close { display: none; }
+
+
+.nav-item.hidden { display: none; }
+#btn-ytm-connect { white-space: nowrap; }
+#btn-ytm-connect.active { color: var(--md-sys-color-primary); }
+.foryou-shelf { margin: 0 0 28px; }
+.foryou-shelf-title { font-size: calc(18px * var(--font-scale, 1)); font-weight: 500; margin: 0 0 12px; color: var(--md-sys-color-on-surface); }
+.foryou-shelf-row { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.foryou-shelf-row::-webkit-scrollbar { display: none; }
+.foryou-card { flex: 0 0 160px; width: 160px; display: flex; flex-direction: column; gap: 4px; text-align: left; background: transparent; border: none; padding: 0; cursor: pointer; color: inherit; font: inherit; }
+.foryou-card img { width: 160px; height: 160px; object-fit: cover; border-radius: 16px; background: var(--md-sys-color-surface-container-highest); margin-bottom: 4px; }
+.foryou-card:hover img { filter: brightness(1.1); }
+.foryou-card-title, .foryou-card-sub { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foryou-card-title { font-size: calc(14px * var(--font-scale, 1)); color: var(--md-sys-color-on-surface); }
+.foryou-card-sub { font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-on-surface-variant); }
+
+body.platform-mac .app-logo,
+body.platform-mac #btn-mini-player { display: none; }
+
+.foryou-tabs { display: flex; gap: 8px; margin: 0 0 20px; flex-wrap: wrap; }
+.foryou-tab { background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface-variant); border: none; border-radius: 999px; padding: 8px 18px; font: inherit; font-size: calc(13px * var(--font-scale, 1)); cursor: pointer; }
+.foryou-tab.active { background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); }
+.foryou-card img.round { border-radius: 50%; }
+.foryou-list { display: flex; flex-direction: column; }
+.foryou-list-row { display: flex; align-items: center; gap: 12px; padding: 6px 8px; background: transparent; border: none; border-radius: 12px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.foryou-list-row:hover { background: var(--md-sys-color-surface-container-high); }
+.foryou-list-row img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex: 0 0 48px; }
+.foryou-list-text { display: flex; flex-direction: column; min-width: 0; }
+
+#btn-tvk-lyrics { right: 132px; }
+#btn-tvk-lyrics.off { opacity: 0.55; }
+
+@property --edge-a { syntax: '<color>'; inherits: true; initial-value: #6750a4; }
+@property --edge-b { syntax: '<color>'; inherits: true; initial-value: #9a82db; }
+@property --edge-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+#edge-glow {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 12px;
+  transition: opacity 600ms ease, --edge-a 1400ms ease, --edge-b 1400ms ease;
+}
+#edge-glow.on { opacity: 1; }
+#edge-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* One lit arc (about half the border) running around the window. Two layers share the
+   exact same ring: a crisp core and a blurred copy of it, so they read as one glowing line. */
+#edge-glow::before,
+#edge-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 5px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--edge-angle),
+    transparent 0deg,
+    var(--edge-a) 50deg,
+    var(--edge-b) 130deg,
+    transparent 195deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: edgeSpin 9s linear infinite;
+}
+#edge-glow::after { opacity: calc(0.95 + var(--edge-pulse, 0) * 0.05); }
+#edge-glow::before {
+  filter: blur(12px) saturate(1.4) brightness(1.15);
+  opacity: calc(0.85 + var(--edge-pulse, 0) * 0.15);
+}
+@keyframes edgeSpin { to { --edge-angle: 360deg; } }
+body.perf #edge-glow::after, body.perf #edge-glow::before { animation: none; }
+body.mini #edge-glow { border-radius: 10px; }
+
+
+
+/* Ambient fullscreen: dim the blurred backdrop so the edge light stands out, and glow behind the cover */
+.tv-karaoke .tv-bg { opacity: 0.2; }
+.tv-karaoke .tv-cover { box-shadow: 0 0 70px 6px color-mix(in srgb, var(--edge-a) 55%, transparent), 0 0 0 1px rgba(255,255,255,0.06); }
+
+.tvk-progress { display: flex; align-items: center; gap: 12px; width: min(420px, 100%); margin-top: 14px; font-size: 12px; color: rgba(255,255,255,0.6); }
+.tvk-bar { flex: 1; height: 14px; display: flex; align-items: center; cursor: pointer; position: relative; }
+.tvk-bar::before { content: ''; position: absolute; left: 0; right: 0; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.2); }
+.tvk-bar-fill { position: relative; height: 4px; width: 0; border-radius: 4px; background: #fff; }
+.tvk-toggle { opacity: 0.6; }
+.tvk-toggle.on { opacity: 1; color: var(--edge-a, #fff); }
+
+#btn-tvk-lyrics.off { opacity: 1; background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.45); }
+#btn-tvk-lyrics.off svg { opacity: 0.6; }
+
+/* Keep the right-panel action row in the same spot and size whether or not the song has lyrics */
+.right-panel.lyrics-empty .right-panel-artwork-box { margin: 0 !important; }
+.right-panel.lyrics-empty .lyrics-section { position: static !important; pointer-events: auto !important; flex: 0 0 auto !important; align-items: normal !important; }
+.right-panel.lyrics-empty .lyrics-header { justify-content: flex-end !important; width: 100% !important; }
+.right-panel.lyrics-empty .lyrics-header-actions { gap: 8px !important; padding: 4px 12px !important; }
+.right-panel.lyrics-empty .lyrics-action-btn { width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; }
+.right-panel.lyrics-empty .lyrics-action-btn svg { width: 16px !important; height: 16px !important; }

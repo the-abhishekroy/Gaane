@@ -1,9 +1,9 @@
 {
-  "name": "riff",
+  "name": "gaane",
   "version": "42.3.0",
   "main": "main.js",
   "bin": {
-    "riff": "./cli.js"
+    "gaane": "./cli.js"
   },
   "scripts": {
     "start": "electron .",
@@ -16,7 +16,7 @@
   "keywords": [],
   "author": "rootscripts",
   "license": "MIT",
-  "description": "made for humans, Riff - audio player.",
+  "description": "Gaane - music player.",
   "devDependencies": {
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3"
@@ -28,7 +28,7 @@
     "hls.js": "^1.7.1",
     "tone": "^15.1.22"
   },
-  "productName": "Riff",
+  "productName": "Gaane",
   "homepage": "https://github.com/rootscripts/riff",
   "repository": {
     "type": "git",
@@ -38,8 +38,8 @@
     "url": "https://github.com/rootscripts/riff/issues"
   },
   "build": {
-    "appId": "io.github.rootscripts.riff",
-    "productName": "Riff",
+    "appId": "io.github.rootscripts.gaane",
+    "productName": "Gaane",
     "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist"
@@ -103,7 +103,8 @@
       "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "icon": "assets/icon.png"
     },
     "publish": [
       {

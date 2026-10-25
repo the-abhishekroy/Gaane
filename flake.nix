@@ -1,5 +1,5 @@
 {
-  description = "Riff - a desktop audio player (Electron)";
+  description = "Gaane - a desktop audio player (Electron)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -8,7 +8,7 @@
 
   outputs = { self, nixpkgs, flake-utils, ... }:
     let
-      mkRiff = pkgs:
+      mkGaane = pkgs:
         pkgs.buildNpmPackage rec {
           pname = "riff";
           version = "42.3.0";
@@ -27,8 +27,8 @@
               appDir = "$out/share/riff";
               runtimeDeps = pkgs.lib.makeBinPath [ pkgs.yt-dlp pkgs.ffmpeg ];
               desktop = pkgs.makeDesktopItem {
-                name = "Riff";
-                desktopName = "Riff";
+                name = "Gaane";
+                desktopName = "Gaane";
                 genericName = "Audio Player";
                 exec = "riff";
                 icon = "riff";
@@ -57,7 +57,7 @@
             '';
 
           meta = with pkgs.lib; {
-            description = "Riff - audio player made for humans";
+            description = "Gaane - audio player made for humans";
             homepage = "https://github.com/rootscripts/riff";
             license = licenses.mit;
             mainProgram = "riff";
@@ -71,8 +71,8 @@
       in
       {
         packages = {
-          default = mkRiff pkgs;
-          riff = mkRiff pkgs;
+          default = mkGaane pkgs;
+          riff = mkGaane pkgs;
         };
 
         devShells.default = pkgs.mkShell {
@@ -84,14 +84,14 @@
           ];
 
           shellHook = ''
-            echo "Riff dev shell. Install deps and run with:"
+            echo "Gaane dev shell. Install deps and run with:"
             echo "  npm install && npm start"
           '';
         };
       })
     // {
       overlays.default = final: prev: {
-        riff = mkRiff final;
+        riff = mkGaane final;
       };
     };
 }

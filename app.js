@@ -14,13 +14,21 @@
         if (raw.startsWith('http://127.0.0.1:') && new URL(raw).pathname.startsWith('/api/')) {
           const opts = Object.assign({}, init || {});
           const headers = new Headers(opts.headers || (input && input.headers) || undefined);
-          headers.set('X-Riff-Token', token);
+          headers.set('X-Gaane-Token', token);
           opts.headers = headers;
           return origFetch(input, opts);
         }
       } catch (e) {}
       return origFetch(input, init);
     };
+  } catch (e) {}
+})();
+
+(() => {
+  try {
+    const api = window.electronAPI;
+    const isMac = (api && typeof api.isMac === 'boolean') ? api.isMac : /Mac/.test(navigator.platform || '');
+    if (isMac) document.body.classList.add('platform-mac');
   } catch (e) {}
 })();
 
@@ -1979,7 +1987,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  const audioEngine = new window.RiffAudioEngine();
+  const audioEngine = new window.GaaneAudioEngine();
   window.audioEngine = audioEngine;
   let hlsInstance = null;
   animationFrameId = null;
@@ -4036,13 +4044,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  let tvkLyricsHidden = false;
+  try { tvkLyricsHidden = localStorage.getItem('gaane_tvk_lyrics_hidden') === '1'; } catch (_) {}
+  const btnTvkLyrics = document.getElementById('btn-tvk-lyrics');
+  if (btnTvkLyrics) {
+    btnTvkLyrics.classList.toggle('off', tvkLyricsHidden);
+    btnTvkLyrics.addEventListener('click', () => {
+      tvkLyricsHidden = !tvkLyricsHidden;
+      try { localStorage.setItem('gaane_tvk_lyrics_hidden', tvkLyricsHidden ? '1' : '0'); } catch (_) {}
+      btnTvkLyrics.classList.toggle('off', tvkLyricsHidden);
+      btnTvkLyrics.setAttribute('aria-pressed', String(!tvkLyricsHidden));
+      btnTvkLyrics.title = tvkLyricsHidden ? 'Show lyrics' : 'Hide lyrics';
+      syncTvLayout();
+      if (typeof showToast === 'function') showToast(tvkLyricsHidden ? 'Lyrics hidden' : 'Lyrics shown');
+    });
+  }
+
   function syncTvLayout(forcedNoLyrics) {
     const tv = el.tvKaraoke || document.getElementById('tv-karaoke');
     if (!tv) return;
     const panel = el.rightPanel || document.getElementById('right-panel');
-    const noLyrics = typeof forcedNoLyrics === 'boolean'
+    const noLyrics = tvkLyricsHidden || (typeof forcedNoLyrics === 'boolean'
       ? forcedNoLyrics
-      : (panel ? panel.classList.contains('lyrics-empty') : (!state.syncedLyrics || state.syncedLyrics.length === 0));
+      : (panel ? panel.classList.contains('lyrics-empty') : (!state.syncedLyrics || state.syncedLyrics.length === 0)));
     const wasNoLyrics = tv.classList.contains('tv-nolyrics');
     tv.classList.toggle('tv-nolyrics', !!noLyrics);
     if (wasNoLyrics !== !!noLyrics && typeof resizeCanvases === 'function') {
@@ -7754,11 +7778,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     requestAnimationFrame(() => {
       document.querySelectorAll('.no-enter-anim').forEach(c => c.classList.remove('no-enter-anim'));
-      [el.viewDiscover, el.viewFavorites, el.viewLocal, el.viewHistory, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings].forEach(v => {
+      [el.viewDiscover, el.viewFavorites, el.viewLocal, el.viewHistory, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings, document.getElementById('view-foryou')].forEach(v => {
         if (v) v.classList.remove('active');
       });
 
-        [el.navDiscover, el.navFavorites, el.navLocal, el.navHistory, el.navQueue, el.navSettings].forEach(n => {
+        [el.navDiscover, el.navFavorites, el.navLocal, el.navHistory, el.navQueue, el.navSettings, document.getElementById('nav-foryou')].forEach(n => {
           if (n) n.classList.remove('active');
         });
 
@@ -7777,6 +7801,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (el.viewHistory) el.viewHistory.classList.add('active');
             if (el.navHistory) el.navHistory.classList.add('active');
             renderHistoryView();
+          } else if (viewName === 'foryou') {
+            const fy = document.getElementById('view-foryou');
+            if (fy) fy.classList.add('active');
+            const fyNav = document.getElementById('nav-foryou');
+            if (fyNav) fyNav.classList.add('active');
+            if (typeof renderForYouView === 'function') renderForYouView();
           } else if (viewName === 'queue') {
             if (el.viewQueue) el.viewQueue.classList.add('active');
             if (el.navQueue) el.navQueue.classList.add('active');
@@ -8058,6 +8088,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (el.navFavorites) el.navFavorites.addEventListener('click', () => switchView('favorites'));
   if (el.navLocal) el.navLocal.addEventListener('click', () => switchView('local'));
   if (el.navHistory) el.navHistory.addEventListener('click', () => switchView('history'));
+  const navForYouBtn = document.getElementById('nav-foryou');
+  if (navForYouBtn) navForYouBtn.addEventListener('click', () => switchView('foryou'));
   if (el.navQueue) el.navQueue.addEventListener('click', () => switchView('queue'));
   if (el.navSettings) el.navSettings.addEventListener('click', () => switchView('settings'));
 
@@ -10025,7 +10057,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (url) m3c.img.src = url;
   }
   function m3cShapeRadii(now) {
-    const S = window.RiffShapes;
+    const S = window.GaaneShapes;
     if (!S || !S.ready()) return null;
     if (!m3c.start) { m3c.start = now; m3c.from = 0; m3c.to = 0; }
     if (now - m3c.start >= S.HOLD_MS) { m3c.from = m3c.to; m3c.to = S.next(m3c.from); m3c.start = now; }
@@ -10034,7 +10066,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   function m3cDraw(now) {
     const ctx = m3c.ctx;
-    const S = window.RiffShapes;
+    const S = window.GaaneShapes;
     if (!ctx || !S) return;
     const sh = m3cShapeRadii(now);
     if (!sh) return;
@@ -10492,7 +10524,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (loadedPlugins.has(p.file)) return;
     try {
       const api = createPluginApi(p);
-      const fn = new Function('Riff', 'plugin', `${p.code}\n//# sourceURL=riff-plugin-${p.file}`);
+      const fn = new Function('Gaane', 'plugin', `${p.code}\n//# sourceURL=riff-plugin-${p.file}`);
       const result = fn(api, api.plugin);
       loadedPlugins.set(p.file, { stop: result && typeof result.stop === 'function' ? result.stop : null });
     } catch (e) { reportPluginError(p.file, e); }
@@ -10504,7 +10536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll(`style[data-plugin="${p.file}"]`).forEach((n) => n.remove());
     const hadStop = !!(entry && entry.stop);
     loadedPlugins.delete(p.file);
-    if (!silent && !hadStop) showToast(`Restart Riff to fully unload "${p.name}"`, 'info');
+    if (!silent && !hadStop) showToast(`Restart Gaane to fully unload "${p.name}"`, 'info');
   }
   let pluginsCache = [];
   function renderPluginCards() {
@@ -10592,7 +10624,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return cssEditorLoading;
   }
 
-  function defineRiffMonacoTheme(monaco) {
+  function defineGaaneMonacoTheme(monaco) {
     const cs = getComputedStyle(document.documentElement);
     const hex = (name, fallback) => { const v = cs.getPropertyValue(name).trim(); return /^#[0-9a-f]{6}$/i.test(v) ? v : fallback; };
     const bg = hex('--md-sys-color-surface-container-lowest-solid', '#141218');
@@ -10608,7 +10640,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     overlay.classList.remove('hidden');
     let monaco;
     try { monaco = await loadMonaco(); } catch (e) { overlay.classList.add('hidden'); showToast('Could not load the CSS editor', 'error'); return; }
-    defineRiffMonacoTheme(monaco);
+    defineGaaneMonacoTheme(monaco);
     if (cssEditorInstance) { cssEditorInstance.focus(); return; }
     cssEditorInstance = monaco.editor.create(document.getElementById('css-editor-host'), {
       value: localStorage.getItem('riff_custom_css') || '/* Your CSS goes here. Example:\n.btn-pill-primary { border-radius: 8px; }\n*/\n',
@@ -10767,7 +10799,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const btnConfirm = document.getElementById('btn-confirm-spotify-import');
       if (btnConfirm) btnConfirm.click();
     }
-    showToast('Welcome to Riff!', 'info');
+    showToast('Welcome to Gaane!', 'info');
   }
   if (window.electronAPI && window.electronAPI.onWelcomeResult) window.electronAPI.onWelcomeResult((d) => applyWelcomeResult(d));
 
@@ -11072,7 +11104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       showToast(r && r.ok === false ? 'Updates are checked only in the installed app' : 'Checking for updates...', 'info');
     });
     api.onUpdateAvailable((d) => {
-      title.textContent = 'Riff ' + d.version + ' is available';
+      title.textContent = 'Gaane ' + d.version + ' is available';
       bar.classList.add('hidden'); bar.firstElementChild.style.width = '0';
       nowB.disabled = laterB.disabled = false;
       nowB.classList.toggle('hidden', !d.canInstall); laterB.classList.toggle('hidden', !d.canInstall);
@@ -11091,11 +11123,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       openModal(modal);
     });
     api.onUpdateProgress((d) => { bar.classList.remove('hidden'); bar.firstElementChild.style.width = d.percent + '%'; text.textContent = 'Downloading... ' + d.percent + '%'; });
-    api.onUpdateReady(() => { text.textContent = 'Update downloaded. It will be installed when you close Riff.'; nowB.classList.add('hidden'); laterB.classList.add('hidden'); });
+    api.onUpdateReady(() => { text.textContent = 'Update downloaded. It will be installed when you close Gaane.'; nowB.classList.add('hidden'); laterB.classList.add('hidden'); });
     api.onUpdateError((d) => showToast('Update error: ' + d.message, 'error'));
     api.onUpdateNotAvailable((d) => showToast('You are on the latest version (' + d.version + ')', 'info'));
     nowB.addEventListener('click', () => { api.updateAction('now'); nowB.disabled = laterB.disabled = true; text.textContent = 'Downloading...'; });
-    laterB.addEventListener('click', () => { api.updateAction('later'); closeModal(modal); showToast('The update will be installed when you close Riff', 'info'); });
+    laterB.addEventListener('click', () => { api.updateAction('later'); closeModal(modal); showToast('The update will be installed when you close Gaane', 'info'); });
     ignoreB.addEventListener('click', () => { api.updateAction('ignore'); closeModal(modal); });
     $('btn-close-update').addEventListener('click', () => closeModal(modal));
   })();
@@ -11531,7 +11563,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let parsedSpotifyExport = { likes: [], playlists: [] };
   let spLoginPollTimer = null;
   let spotifyConnected = false;
-  const spotifyHeaders = { 'X-Riff-Token': window.electronAPI?.serverToken || '' };
+  const spotifyHeaders = { 'X-Gaane-Token': window.electronAPI?.serverToken || '' };
 
   async function checkSpotifyAuthStatus() {
     try {
@@ -13845,6 +13877,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!state.myWaveActive || isExtendingMyWave) return false;
     isExtendingMyWave = true;
     try {
+      if (ytmState.connected && state.currentTrack && state.currentTrack.id) {
+        const rRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-radio?id=${encodeURIComponent(state.currentTrack.id)}`);
+        const rData = await rRes.json();
+        if (rData.success && Array.isArray(rData.tracks)) {
+          const have = new Set(state.queue.map(t => getTrackCanonicalId(t)));
+          const fresh = rData.tracks.filter(t => !have.has(getTrackCanonicalId(t))).slice(0, 8);
+          if (fresh.length > 0) {
+            state.queue.push(...fresh);
+            updateQueueBadge();
+            renderQueueView();
+            return true;
+          }
+        }
+      }
       const profile = await computeTasteProfile();
       const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/vibe`, {
         method: 'POST',
@@ -14359,6 +14405,313 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // In-place controls for the ambient fullscreen view: none of these leave the view.
+  (() => {
+    const aud = () => document.getElementById('native-audio');
+    const fmt = (x) => `${Math.floor(x / 60)}:${String(Math.floor(x % 60)).padStart(2, '0')}`;
+    const mirror = (id, targetId) => document.getElementById(id)?.addEventListener('click', () => { document.getElementById(targetId)?.click(); setTimeout(syncTvkControls, 60); });
+    mirror('btn-tvk-shuffle', 'btn-shuffle');
+    mirror('btn-tvk-repeat', 'btn-repeat');
+    document.getElementById('btn-tvk-fav')?.addEventListener('click', () => {
+      if (state.currentTrack) toggleFavoriteTrack(state.currentTrack);
+      setTimeout(syncTvkControls, 60);
+    });
+    const bar = document.getElementById('tvk-bar');
+    bar?.addEventListener('click', (e) => {
+      const a = aud();
+      if (!a || !a.duration || !isFinite(a.duration)) return;
+      const r = bar.getBoundingClientRect();
+      a.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * a.duration;
+      syncTvkControls();
+    });
+    function syncTvkControls() {
+      const tv = document.getElementById('tv-karaoke');
+      if (!tv || tv.classList.contains('hidden')) return;
+      const a = aud();
+      if (a && a.duration && isFinite(a.duration)) {
+        const cur = document.getElementById('tvk-time-cur'), dur = document.getElementById('tvk-time-dur'), fill = document.getElementById('tvk-bar-fill');
+        if (cur) cur.textContent = fmt(a.currentTime || 0);
+        if (dur) dur.textContent = fmt(a.duration);
+        if (fill) fill.style.width = `${Math.min(100, (a.currentTime / a.duration) * 100)}%`;
+      }
+      document.getElementById('btn-tvk-shuffle')?.classList.toggle('on', !!state.isShuffle);
+      document.getElementById('btn-tvk-repeat')?.classList.toggle('on', !!state.isRepeat);
+      const isFav = document.getElementById('fav-icon')?.getAttribute('fill') === 'currentColor';
+      document.getElementById('tvk-fav-icon')?.setAttribute('fill', isFav ? 'currentColor' : 'none');
+      document.getElementById('btn-tvk-fav')?.classList.toggle('on', isFav);
+    }
+    setInterval(syncTvkControls, 400);
+  })();
+
+  // Ambient fullscreen = the fullscreen lyrics view (lyrics, visualizer, controls) plus the edge light.
+  let ambientOpen = false;
+  const openAmbientFullscreen = () => document.getElementById('btn-tv-karaoke')?.click();
+  document.getElementById('btn-ambient-mode')?.addEventListener('click', openAmbientFullscreen);
+  (() => {
+    const tv = document.getElementById('tv-karaoke');
+    if (!tv) return;
+    const apply = () => {
+      const open = !tv.classList.contains('hidden');
+      if (open === ambientOpen) return;
+      ambientOpen = open;
+      if (window.electronAPI && window.electronAPI.setFullscreen) window.electronAPI.setFullscreen(open);
+      syncEdgeGlow();
+    };
+    new MutationObserver(apply).observe(tv, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  const edgeGlowEl = document.getElementById('edge-glow');
+  let edgeGlowOn = true;
+  try { edgeGlowOn = localStorage.getItem('gaane_edge_glow') !== '0'; } catch (_) {}
+  let edgeCoverKey = '';
+  let edgePulse = 0;
+  let edgeFreq = null;
+  let edgeLastFrame = 0;
+
+  function vividEdgeColor(hex, lift) {
+    try {
+      const { r, g, b } = hexToRgb(hex);
+      const hsl = rgbToHsl(r, g, b);
+      return hslToHex(hsl.h, Math.max(62, Math.min(95, hsl.s + 20)), Math.max(48, Math.min(68, hsl.l + lift)));
+    } catch (_) { return hex; }
+  }
+
+  function syncEdgeGlow() {
+    if (!edgeGlowEl) return;
+    const track = state.currentTrack;
+    edgeGlowEl.classList.toggle('on', ambientOpen && edgeGlowOn && !!track);
+    const thumb = (track && (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(track) : track.thumbnail)) || '';
+    if (!thumb || thumb === edgeCoverKey) return;
+    edgeCoverKey = thumb;
+    analyzeCover(thumb).then((a) => {
+      if (edgeCoverKey !== thumb) return;
+      const root = document.documentElement.style;
+      root.setProperty('--edge-a', vividEdgeColor(a.accent, 0));
+      let second = a.accent;
+      try {
+        const c = hexToRgb(a.accent);
+        const hsl = rgbToHsl(c.r, c.g, c.b);
+        second = hslToHex((hsl.h + 28) % 360, hsl.s, hsl.l);
+      } catch (_) {}
+      root.setProperty('--edge-b', vividEdgeColor(second, 8));
+    });
+  }
+  setInterval(syncEdgeGlow, 700);
+
+  function edgePulseLoop(ts) {
+    requestAnimationFrame(edgePulseLoop);
+    if (!ambientOpen || !edgeGlowOn || !state.isPlaying || document.hidden || ts - edgeLastFrame < 40) return;
+    edgeLastFrame = ts;
+    try {
+      if (!edgeFreq) {
+        const an = audioEngine && audioEngine.getAnalyserNode && audioEngine.getAnalyserNode();
+        if (!an) return;
+        edgeFreq = new Uint8Array(an.frequencyBinCount);
+      }
+      audioEngine.getFrequencyData(edgeFreq);
+      let sum = 0;
+      const n = Math.min(6, edgeFreq.length);
+      for (let i = 0; i < n; i++) sum += edgeFreq[i];
+      const level = Math.min(1, Math.pow(sum / (n * 255), 1.6) * 1.4);
+      edgePulse += (level - edgePulse) * (level > edgePulse ? 0.55 : 0.15);
+      document.documentElement.style.setProperty('--edge-pulse', edgePulse.toFixed(3));
+    } catch (_) {}
+  }
+  requestAnimationFrame(edgePulseLoop);
+
+  const ytmState = { connected: false, sections: [], loadedAt: 0 };
+
+  function updateYtmUi() {
+    const btn = document.getElementById('btn-ytm-connect');
+    if (btn) {
+      const span = btn.querySelector('span');
+      if (span) span.textContent = ytmState.connected ? 'Disconnect YouTube Music' : 'Connect YouTube Music';
+      btn.classList.toggle('active', ytmState.connected);
+    }
+    const nav = document.getElementById('nav-foryou');
+    if (nav) nav.classList.toggle('hidden', !ytmState.connected);
+    if (typeof updateNavIndicator === 'function') updateNavIndicator(false);
+  }
+
+  async function refreshYtmStatus() {
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-status`);
+      const data = await res.json();
+      ytmState.connected = !!data.connected;
+    } catch (e) { ytmState.connected = false; }
+    updateYtmUi();
+    return ytmState.connected;
+  }
+
+  async function loadYtmRecommendations(force) {
+    if (!(await refreshYtmStatus())) return [];
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-home${force ? '?refresh=1' : ''}`);
+      const data = await res.json();
+      if (data.expired) {
+        ytmState.connected = false;
+        ytmState.sections = [];
+        updateYtmUi();
+        showToast('YouTube Music session expired. Connect again.', 'error');
+        return [];
+      }
+      if (!data.success) return [];
+      ytmState.sections = data.sections || [];
+      ytmState.loadedAt = Date.now();
+      if (document.getElementById('view-foryou')?.classList.contains('active')) renderForYouView();
+      return data.wave || [];
+    } catch (e) { return []; }
+  }
+
+  async function playYtmCollection(item) {
+    try {
+      const url = item.kind === 'artist'
+        ? `http://127.0.0.1:${state.serverPort}/api/ytm-artist?id=${encodeURIComponent(item.id)}`
+        : `http://127.0.0.1:${state.serverPort}/api/ytm-collection?id=${encodeURIComponent(item.id)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success && data.tracks && data.tracks.length) {
+        playTrack(data.tracks[0], data.tracks, 0);
+        return;
+      }
+    } catch (e) {}
+    showToast('Could not load that item', 'error');
+  }
+
+  let forYouTab = 'home';
+  const forYouTabData = {};
+
+  async function loadForYouTab(tab, force) {
+    if (tab === 'home') {
+      if (force || !ytmState.sections.length) await loadYtmRecommendations(force);
+      return ytmState.sections;
+    }
+    if (!force && forYouTabData[tab]) return forYouTabData[tab];
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-tab?tab=${tab}${force ? '&refresh=1' : ''}`);
+      const data = await res.json();
+      if (data.success) forYouTabData[tab] = data.sections || [];
+      else if (data.expired) { ytmState.connected = false; updateYtmUi(); }
+    } catch (e) {}
+    return forYouTabData[tab] || [];
+  }
+
+  function renderForYouSections(host, sections, tab) {
+    host.innerHTML = '';
+    if (!sections.length) {
+      host.innerHTML = '<div class="empty-hint">Nothing here yet.</div>';
+      return;
+    }
+    sections.forEach((sec) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'foryou-shelf';
+      const h = document.createElement('h3');
+      h.className = 'foryou-shelf-title';
+      h.textContent = sec.title;
+      wrap.appendChild(h);
+      if (tab === 'history') {
+        const list = document.createElement('div');
+        list.className = 'foryou-list';
+        (sec.tracks || []).forEach((t, i) => {
+          const row = document.createElement('button');
+          row.className = 'foryou-list-row';
+          row.innerHTML = '<img loading="lazy" alt=""><span class="foryou-list-text"><span class="foryou-card-title"></span><span class="foryou-card-sub"></span></span>';
+          row.querySelector('img').src = t.thumbnail || '';
+          row.querySelector('.foryou-card-title').textContent = t.title;
+          row.querySelector('.foryou-card-sub').textContent = t.artist;
+          row.addEventListener('click', () => playTrack(t, sec.tracks.slice(), i));
+          list.appendChild(row);
+        });
+        wrap.appendChild(list);
+      } else {
+        const row = document.createElement('div');
+        row.className = 'foryou-shelf-row';
+        const addCard = (thumb, title, sub, round, onClick) => {
+          const card = document.createElement('button');
+          card.className = 'foryou-card';
+          card.innerHTML = `<img loading="lazy" alt=""><span class="foryou-card-title"></span><span class="foryou-card-sub"></span>`;
+          if (round) card.querySelector('img').classList.add('round');
+          card.querySelector('img').src = thumb || '';
+          card.querySelector('.foryou-card-title').textContent = title;
+          card.querySelector('.foryou-card-sub').textContent = sub || '';
+          card.addEventListener('click', onClick);
+          row.appendChild(card);
+        };
+        (sec.collections || []).forEach((c) => addCard(c.thumbnail, c.title, c.subtitle, c.kind === 'artist', () => playYtmCollection(c)));
+        (sec.tracks || []).forEach((t, i) => addCard(t.thumbnail, t.title, t.artist, false, () => playTrack(t, sec.tracks.slice(), i)));
+        wrap.appendChild(row);
+      }
+      host.appendChild(wrap);
+    });
+  }
+
+  async function renderForYouView(force) {
+    const host = document.getElementById('foryou-shelves');
+    if (!host) return;
+    document.querySelectorAll('#foryou-tabs .foryou-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === forYouTab));
+    if (!ytmState.connected) {
+      host.innerHTML = '<div class="empty-hint">Connect YouTube Music from My Wave to see your recommendations.</div>';
+      return;
+    }
+    const tab = forYouTab;
+    const cached = tab === 'home' ? ytmState.sections : forYouTabData[tab];
+    if (!force && cached && cached.length) {
+      renderForYouSections(host, cached, tab);
+      return;
+    }
+    host.innerHTML = getWaveSpinnerHtml();
+    const sections = await loadForYouTab(tab, force);
+    if (tab !== forYouTab) return;
+    renderForYouSections(host, sections, tab);
+  }
+
+  const btnYtmConnect = document.getElementById('btn-ytm-connect');
+  if (btnYtmConnect) {
+    btnYtmConnect.addEventListener('click', async () => {
+      if (btnYtmConnect.disabled) return;
+      btnYtmConnect.disabled = true;
+      try {
+        if (ytmState.connected) {
+          await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-logout`, { method: 'POST' });
+          ytmState.connected = false;
+          ytmState.sections = [];
+          Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
+          updateYtmUi();
+          showToast('Disconnected from YouTube Music');
+          if (document.getElementById('view-foryou')?.classList.contains('active')) switchView('discover');
+          await loadHomePage(true);
+        } else {
+          showToast('Sign in to YouTube Music in the window that opened');
+          const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-login`, { method: 'POST' });
+          const data = await res.json();
+          if (data.success) {
+            showToast('YouTube Music connected');
+            await loadHomePage(true);
+          } else if (data.error !== 'closed') {
+            showToast('Could not connect YouTube Music', 'error');
+          }
+        }
+      } catch (e) {
+        showToast('YouTube Music request failed', 'error');
+      } finally {
+        btnYtmConnect.disabled = false;
+        refreshYtmStatus();
+      }
+    });
+  }
+  const btnForYouRefresh = document.getElementById('btn-foryou-refresh');
+  if (btnForYouRefresh) {
+    btnForYouRefresh.addEventListener('click', async () => {
+      if (forYouTab === 'home') ytmState.sections = [];
+      else delete forYouTabData[forYouTab];
+      await renderForYouView(true);
+    });
+  }
+  document.querySelectorAll('#foryou-tabs .foryou-tab').forEach((b) => {
+    b.addEventListener('click', () => { forYouTab = b.dataset.tab; renderForYouView(false); });
+  });
+  refreshYtmStatus();
+
   async function loadHomePage(isRefresh = false) {
     const jumpSection = document.getElementById('section-jump-back');
     if (jumpSection) {
@@ -14412,8 +14765,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isRefresh) {
         vibePayload.refresh = true;
       }
-      let uniqueTracks = [];
-      try {
+      const ytmWave = await loadYtmRecommendations(isRefresh);
+      let uniqueTracks = ytmWave.length >= 5 ? ytmWave.slice() : [];
+      if (uniqueTracks.length < 5) try {
         const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/vibe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -14837,7 +15191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       const move = window.confirm(
         'Move your existing music to the new folder?\n\n' +
-        'OK: move all downloaded and imported files, then restart Riff.\n' +
+        'OK: move all downloaded and imported files, then restart Gaane.\n' +
         'Cancel: switch to the new folder without moving (files stay in the old one).'
       );
       btnChangeMusicFolder.disabled = true;
@@ -14857,7 +15211,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       btnChangeMusicFolder.textContent = 'Restarting...';
-      showToast('Restarting Riff...');
+      showToast('Restarting Gaane...');
       setTimeout(() => { if (window.electronAPI.restartApp) window.electronAPI.restartApp(); }, 400);
     });
   }

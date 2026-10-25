@@ -197,7 +197,7 @@ function runGUI() {
     const primaryDisplay = screen.getPrimaryDisplay();
     const scaleFactor = primaryDisplay.scaleFactor;
 
-    app.setAppUserModelId('io.github.rootscripts.riff');
+    app.setAppUserModelId('io.github.rootscripts.gaane');
     mainWindow = new BrowserWindow({
       x: initialBounds.x,
       y: initialBounds.y,
@@ -206,15 +206,16 @@ function runGUI() {
       minWidth: 360,
                                    minHeight: 500,
                                    backgroundColor: firstRun ? '#8d5ef2' : '#000000',
-                                   title: 'Riff',
+                                   title: 'Gaane',
                                    icon: path.join(__dirname, 'assets', 'icon.png'),
                                    frame: false,
                                    titleBarStyle: 'hidden',
+                                   ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 13 } } : {}),
                                    show: false,
                                    useContentSize: true,
                                    webPreferences: {
                                      preload: path.join(__dirname, 'preload.js'),
-                                   additionalArguments: [`--riff-token=${getServerToken()}`],
+                                   additionalArguments: [`--gaane-token=${getServerToken()}`],
                                    nodeIntegration: false,
                                    contextIsolation: true,
                                    webSecurity: false,
@@ -314,6 +315,10 @@ function runGUI() {
       }
     });
 
+    ipcMain.on('window-set-fullscreen', (e, v) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(!!v);
+    });
+
     ipcMain.on('window-close', () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
     });
@@ -339,7 +344,7 @@ function runGUI() {
     });
 
     ipcMain.handle('get-diagnostics', async () => {
-      const lines = [`Riff ${app.getVersion()}`, `OS ${process.platform} ${process.arch} ${os.release()}`, `Electron ${process.versions.electron} Chromium ${process.versions.chrome} Node ${process.versions.node}`, `Locale ${app.getLocale()}`, `Data ${DATA_DIR}`];
+      const lines = [`Gaane ${app.getVersion()}`, `OS ${process.platform} ${process.arch} ${os.release()}`, `Electron ${process.versions.electron} Chromium ${process.versions.chrome} Node ${process.versions.node}`, `Locale ${app.getLocale()}`, `Data ${DATA_DIR}`];
       for (const name of ['yt-dlp', 'ffmpeg']) {
         const bin = resolveBinary(name);
         lines.push(`${name}: ${bin || 'NOT FOUND'}`);
@@ -632,7 +637,7 @@ function runGUI() {
           let trayIcon = nativeImage.createFromPath(iconPath);
           trayIcon = trayIcon.resize({ width: 22, height: 22 });
           tray = new Tray(trayIcon);
-          tray.setToolTip('Riff');
+          tray.setToolTip('Gaane');
           const contextMenu = Menu.buildFromTemplate([
             {
               label: 'Show/Hide',

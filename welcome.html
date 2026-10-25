@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Riff - Setup</title>
+  <title>Welcome to Gaane - Setup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&display=swap" rel="stylesheet">
@@ -1010,7 +1010,7 @@
             <g class="shape-spin"><path class="shape-path" id="shapePath" d=""/></g>
           </svg>
           <div class="icon-tint">
-            <img class="riff-icon" src="assets/icon.png" alt="Riff" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23ffffff\'><path d=\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\'/></svg>';" >
+            <img class="riff-icon" src="assets/icon.png" alt="Gaane" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%23ffffff\'><path d=\'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z\'/></svg>';" >
           </div>
         </div>
         <h1 class="riff-title">
@@ -1020,7 +1020,7 @@
 
       <div class="stacked-group">
         <div class="stacked-container top">
-          <h2 class="step-header-title">Welcome to Riff.</h2>
+          <h2 class="step-header-title">Welcome to Gaane.</h2>
           <p class="step-header-subtitle">Let's get started.</p>
         </div>
 
@@ -1229,8 +1229,8 @@
       <div class="stacked-group">
 
         <div class="stacked-container stacked-3-top">
-          <h2 class="step-header-title">Add Riff to your launcher</h2>
-          <p class="step-header-subtitle" id="launcherSub">Open Riff in one click from your Start menu or applications menu.</p>
+          <h2 class="step-header-title">Add Gaane to your launcher</h2>
+          <p class="step-header-subtitle" id="launcherSub">Open Gaane in one click from your Start menu or applications menu.</p>
         </div>
 
         <div class="stacked-container stacked-3-middle launcher-preview">
@@ -1238,7 +1238,7 @@
             <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
           </div>
           <div>
-            <div class="launcher-name">Riff</div>
+            <div class="launcher-name">Gaane</div>
             <div class="launcher-desc">Music player</div>
           </div>
         </div>
@@ -1249,7 +1249,7 @@
           </div>
           <div class="row-text">
             <div class="row-title" id="launcherTitle">Start menu shortcut</div>
-            <div class="row-sub" id="launcherRowSub">Add Riff with its icon so you can find it by searching</div>
+            <div class="row-sub" id="launcherRowSub">Add Gaane with its icon so you can find it by searching</div>
           </div>
           <button class="sw on" role="switch" aria-checked="true" id="launcherSwitch"></button>
         </div>
@@ -1299,7 +1299,7 @@
             </div>
             <div class="row-text">
               <div class="row-title">Import a Spotify playlist</div>
-              <div class="row-sub">Paste a public playlist link and it becomes a Riff playlist</div>
+              <div class="row-sub">Paste a public playlist link and it becomes a Gaane playlist</div>
             </div>
           </div>
           <div class="field-row">
@@ -1403,14 +1403,14 @@
 
       async spotifyLookup(url) {
         const port = await this.serverPort();
-        if (!port) return { success: false, error: 'Riff server is not available here' };
+        if (!port) return { success: false, error: 'Gaane server is not available here' };
         try {
           const res = await fetch(`http://127.0.0.1:${port}/api/spotify-import?url=${encodeURIComponent(url)}`, {
-            headers: { 'X-Riff-Token': this.api?.serverToken || '' }
+            headers: { 'X-Gaane-Token': this.api?.serverToken || '' }
           });
           return await res.json();
         } catch (e) {
-          return { success: false, error: 'Could not reach the Riff server' };
+          return { success: false, error: 'Could not reach the Gaane server' };
         }
       }
     };
@@ -1943,16 +1943,16 @@
 
       if (platform === 'win32') {
         launcherTitle.textContent = 'Start menu shortcut';
-        launcherSub.textContent = 'Pin Riff to the Start menu so you can open it by searching.';
-        launcherRowSub.textContent = 'Adds Riff with its icon to the Start menu';
+        launcherSub.textContent = 'Pin Gaane to the Start menu so you can open it by searching.';
+        launcherRowSub.textContent = 'Adds Gaane with its icon to the Start menu';
       } else {
         launcherTitle.textContent = 'Applications menu entry';
-        launcherSub.textContent = 'Add Riff to your applications menu with its icon and description.';
+        launcherSub.textContent = 'Add Gaane to your applications menu with its icon and description.';
         launcherRowSub.textContent = 'Creates a launcher that starts the AppImage';
       }
 
       if (!info) return;
-      if (info.installed) setLauncherUnavailable('Riff is already in your launcher');
+      if (info.installed) setLauncherUnavailable('Gaane is already in your launcher');
       else if (!info.canInstall) setLauncherUnavailable(info.reason || 'Not available here');
     }
 
