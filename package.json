@@ -121,33 +121,21 @@
       "background": "build/dmg-background.png",
       "window": {
         "width": 660,
-        "height": 400
+        "height": 370
       },
       "iconSize": 84,
       "iconTextSize": 12,
       "contents": [
         {
           "x": 170,
-          "y": 150,
+          "y": 172,
           "type": "file"
         },
         {
           "x": 490,
-          "y": 150,
+          "y": 172,
           "type": "link",
           "path": "/Applications"
-        },
-        {
-          "x": 215,
-          "y": 300,
-          "type": "file",
-          "path": "build/Repair Gaane.command"
-        },
-        {
-          "x": 445,
-          "y": 300,
-          "type": "file",
-          "path": "build/Uninstall Gaane.command"
         }
       ]
     }
