@@ -345,28 +345,35 @@ function runGUI() {
       return;
     }
     const b = screen.getDisplayMatching(win.getBounds()).bounds;
-    if (!edgeOverlay || edgeOverlay.isDestroyed()) {
-      edgeOverlay = new BrowserWindow({
-        x: b.x, y: b.y, width: b.width, height: b.height,
-        transparent: true, frame: false, hasShadow: false, resizable: false, movable: false,
-        focusable: false, skipTaskbar: true, show: false, fullscreenable: false,
-        enableLargerThanScreen: true,
-        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-        webPreferences: { preload: path.join(__dirname, 'edge-overlay-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
-      });
-      edgeOverlay.setIgnoreMouseEvents(true);
-      edgeOverlay.setAlwaysOnTop(true, 'screen-saver');
-      if (process.platform === 'darwin') {
-        edgeOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        try { app.dock.show(); } catch (_) {}
-      }
-      edgeOverlay.loadFile(path.join(__dirname, 'edge-overlay.html'));
-      edgeOverlay.webContents.on('did-finish-load', () => {
-        if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
-      });
-    }
+    ensureEdgeOverlay();
     edgeOverlay.setBounds(b);
     edgeOverlay.showInactive();
+  }
+
+  // Created once, hidden, at startup: switching a window to "visible over fullscreen" re-registers the
+  // app with macOS, which must not happen in the middle of the fullscreen transition.
+  function ensureEdgeOverlay() {
+    if (edgeOverlay && !edgeOverlay.isDestroyed()) return edgeOverlay;
+    const b = screen.getPrimaryDisplay().bounds;
+    edgeOverlay = new BrowserWindow({
+      x: b.x, y: b.y, width: b.width, height: b.height,
+      transparent: true, backgroundColor: '#00000000', frame: false, hasShadow: false, resizable: false, movable: false,
+      focusable: false, skipTaskbar: true, show: false, fullscreenable: false,
+      enableLargerThanScreen: true,
+      ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+      webPreferences: { preload: path.join(__dirname, 'edge-overlay-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+    });
+    edgeOverlay.setIgnoreMouseEvents(true);
+    edgeOverlay.setAlwaysOnTop(true, 'screen-saver');
+    if (process.platform === 'darwin') {
+      edgeOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      try { app.dock.show(); } catch (_) {}
+    }
+    edgeOverlay.loadFile(path.join(__dirname, 'edge-overlay.html'));
+    edgeOverlay.webContents.on('did-finish-load', () => {
+      if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
+    });
+    return edgeOverlay;
   }
 
   ipcMain.on('edge-overlay', (e, on) => { edgeWanted = !!on; updateEdgeOverlay(); });
@@ -384,33 +391,37 @@ function runGUI() {
   const MINI_FULL = { width: 310, height: 150 };
   const MINI_COMPACT = { width: 270, height: 70 };
 
+  function ensureMini() {
+    if (miniWin && !miniWin.isDestroyed()) return miniWin;
+    const size = miniCompact ? MINI_COMPACT : MINI_FULL;
+    const wa = screen.getPrimaryDisplay().workArea;
+    // same spot as the macOS Now Playing widget: top-right, 17pt from the edge, 7pt under the menu bar (6pt is shadow room)
+    const pos = miniPos || { x: wa.x + wa.width - size.width - 11, y: wa.y + 1 };
+    miniWin = new BrowserWindow({
+      ...pos, ...size,
+      transparent: true, backgroundColor: '#00000000', frame: false, hasShadow: true, resizable: false, maximizable: false, fullscreenable: false,
+      alwaysOnTop: true, skipTaskbar: true, show: false,
+      ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+      webPreferences: { preload: path.join(__dirname, 'mini-player-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+    });
+    // highest level + every desktop + above other apps' fullscreen windows, so it stays pinned everywhere
+    miniWin.setAlwaysOnTop(true, 'screen-saver');
+    if (process.platform === 'darwin') {
+      miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      try { app.dock.show(); } catch (_) {}
+    }
+    miniWin.on('moved', () => { if (miniWin && !miniWin.isDestroyed()) { const b = miniWin.getBounds(); miniPos = { x: b.x, y: b.y }; } });
+    miniWin.on('closed', () => { miniWin = null; });
+    miniWin.loadFile(path.join(__dirname, 'mini-player.html'));
+    miniWin.webContents.on('did-finish-load', () => {
+      if (miniWin && !miniWin.isDestroyed()) miniWin.webContents.send('mini-mode', { compact: miniCompact });
+    });
+    return miniWin;
+  }
+
   function showMini() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    const size = miniCompact ? MINI_COMPACT : MINI_FULL;
-    if (!miniWin || miniWin.isDestroyed()) {
-      const wa = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
-      // same spot as the macOS Now Playing widget: top-right, 17pt from the edge, 7pt under the menu bar (6pt is shadow room)
-      const pos = miniPos || { x: wa.x + wa.width - size.width - 11, y: wa.y + 1 };
-      miniWin = new BrowserWindow({
-        ...pos, ...size,
-        transparent: true, frame: false, hasShadow: true, resizable: false, maximizable: false, fullscreenable: false,
-        alwaysOnTop: true, skipTaskbar: true, show: false,
-        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
-        webPreferences: { preload: path.join(__dirname, 'mini-player-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
-      });
-      // highest level + every desktop + above other apps' fullscreen windows, so it stays pinned everywhere
-      miniWin.setAlwaysOnTop(true, 'screen-saver');
-      if (process.platform === 'darwin') {
-        miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        try { app.dock.show(); } catch (_) {}
-      }
-      miniWin.on('moved', () => { if (miniWin && !miniWin.isDestroyed()) { const b = miniWin.getBounds(); miniPos = { x: b.x, y: b.y }; } });
-      miniWin.on('closed', () => { miniWin = null; });
-      miniWin.loadFile(path.join(__dirname, 'mini-player.html'));
-      miniWin.webContents.on('did-finish-load', () => {
-        if (miniWin && !miniWin.isDestroyed()) miniWin.webContents.send('mini-mode', { compact: miniCompact });
-      });
-    }
+    ensureMini();
     miniWin.setAlwaysOnTop(true, 'screen-saver');
     miniWin.showInactive();
     try { mainWindow.webContents.setBackgroundThrottling(false); } catch (_) {}
@@ -430,6 +441,8 @@ function runGUI() {
     mainWindow.focus();
     if (openAmbient) mainWindow.webContents.send('mini-command', { cmd: 'ambient' });
   }
+
+  app.whenReady().then(() => setTimeout(() => { try { ensureEdgeOverlay(); ensureMini(); } catch (e) { logger.error('overlay setup', e); } }, 2500));
 
   ipcMain.on('mini-open', () => {
     showMini();
