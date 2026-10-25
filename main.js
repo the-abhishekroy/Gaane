@@ -395,9 +395,11 @@ function runGUI() {
         ...pos, ...size,
         transparent: true, frame: false, hasShadow: true, resizable: false, maximizable: false, fullscreenable: false,
         alwaysOnTop: true, skipTaskbar: true, show: false,
+        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
         webPreferences: { preload: path.join(__dirname, 'mini-player-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
       });
-      miniWin.setAlwaysOnTop(true, 'floating');
+      // highest level + every desktop + above other apps' fullscreen windows, so it stays pinned everywhere
+      miniWin.setAlwaysOnTop(true, 'screen-saver');
       if (process.platform === 'darwin') {
         miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
         try { app.dock.show(); } catch (_) {}
@@ -409,6 +411,7 @@ function runGUI() {
         if (miniWin && !miniWin.isDestroyed()) miniWin.webContents.send('mini-mode', { compact: miniCompact });
       });
     }
+    miniWin.setAlwaysOnTop(true, 'screen-saver');
     miniWin.showInactive();
     try { mainWindow.webContents.setBackgroundThrottling(false); } catch (_) {}
   }
