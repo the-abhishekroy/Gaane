@@ -14538,7 +14538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const since = sum.since ? new Date(sum.since + 'T12:00:00').toLocaleDateString(undefined, { month: '2-digit', year: '2-digit' }).replace('/', ' / ') : '';
       const mins = Math.round(sum.totalMs / 60000);
       const story = [
-        { big: mins.toLocaleString(), label: 'Minutes listened', foot: 'Listener', sub: `${sum.totalPlays} play${sum.totalPlays === 1 ? '' : 's'} · ${statsPeriod === 'all' ? 'All time' : statsPeriod === 'week' ? 'This week' : statsPeriod === 'month' ? 'This month' : 'This year'}`, art: ts && ts.thumbnail },
+        { big: mins >= 1 ? mins.toLocaleString() : String(Math.max(1, Math.round(sum.totalMs / 1000))), label: mins >= 1 ? 'Minutes listened' : 'Seconds listened', foot: 'Listener', sub: `${sum.totalPlays} play${sum.totalPlays === 1 ? '' : 's'} · ${sum.distinctSongs} song${sum.distinctSongs === 1 ? '' : 's'} · ${sum.distinctArtists} artist${sum.distinctArtists === 1 ? '' : 's'}`, art: ts && ts.thumbnail },
         { big: ta ? ta.name : '-', label: 'Top artist', foot: 'Listener', sub: ta ? `${fmtListening(ta.ms)} · ${ta.plays} play${ta.plays === 1 ? '' : 's'}` : '', art: ta && ta.thumbnail },
         { big: ts ? ts.title : '-', label: 'Top song', foot: 'Listener', sub: ts ? `${ts.artist} · ${ts.plays} play${ts.plays === 1 ? '' : 's'}` : '', art: ts && ts.thumbnail },
         { big: tb ? tb.name : 'No album yet', label: 'Top album', foot: 'Listener', sub: tb ? `${tb.artist ? tb.artist + ' · ' : ''}${fmtListening(tb.ms)}` : fmtListening(0), art: tb && tb.thumbnail }
@@ -14564,11 +14564,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const busiest = sum.busiestDay ? new Date(sum.busiestDay.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '-';
     const cards = document.createElement('div');
     cards.className = 'stat-cards';
+    // only things the story cards above do not already show
     cards.innerHTML =
-      card('Listening time', fmtListening(sum.totalMs), `${sum.activeDays} active day${sum.activeDays === 1 ? '' : 's'}`) +
-      card('Plays', sum.totalPlays, 'a play is half a song') +
-      card('Songs', sum.distinctSongs) + card('Artists', sum.distinctArtists) + card('Albums', sum.distinctAlbums) +
       card('Day streak', sum.streakDays, sum.streakDays ? 'days in a row' : 'play something today') +
+      card('Active days', sum.activeDays) +
       card('Peak hour', sum.peakHour === null ? '-' : fmtHour(sum.peakHour)) +
       card('Busiest day', busiest, sum.busiestDay ? fmtListening(sum.busiestDay.ms) : '');
     body.appendChild(cards);
