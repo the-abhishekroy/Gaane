@@ -7794,3 +7794,13 @@ body.mini #edge-glow { border-radius: 10px; }
 .right-panel.lyrics-empty .lyrics-header-actions { gap: 8px !important; padding: 4px 12px !important; }
 .right-panel.lyrics-empty .lyrics-action-btn { width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important; }
 .right-panel.lyrics-empty .lyrics-action-btn svg { width: 16px !important; height: 16px !important; }
+
+.ytm-dialog-overlay { position: fixed; inset: 0; z-index: 100001; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.ytm-dialog { width: min(520px, 100%); max-height: 90vh; overflow-y: auto; background: var(--md-sys-color-surface-container-high, #222); color: var(--md-sys-color-on-surface, #eee); border-radius: 24px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.ytm-dialog h3 { margin: 0; font-size: 20px; font-weight: 500; }
+.ytm-dialog-note, .ytm-dialog-privacy { margin: 0; font-size: 13px; color: var(--md-sys-color-on-surface-variant, #bbb); }
+.ytm-dialog-steps { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; }
+.ytm-dialog-steps a { color: var(--md-sys-color-primary, #aaf); }
+#ytm-cookie-input { width: 100%; box-sizing: border-box; min-height: 96px; resize: vertical; border-radius: 14px; border: 1px solid var(--md-sys-color-outline-variant, #444); background: var(--md-sys-color-surface-container, #181818); color: inherit; padding: 10px 12px; font: 12px ui-monospace, monospace; }
+.ytm-dialog-error { min-height: 16px; font-size: 13px; color: var(--md-sys-color-error, #f66); }
+.ytm-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }

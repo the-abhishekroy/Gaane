@@ -6,13 +6,10 @@ const { DATA_DIR } = require('./platform');
 const logger = require('./logger');
 
 const AUTH_PATH = path.join(DATA_DIR, 'ytm-auth.json');
-const PARTITION = 'persist:riff-ytm';
 const CLIENT_VERSION = '1.20250101.01.00';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-const LOGIN_URL = 'https://accounts.google.com/ServiceLogin?service=youtube&continue=' + encodeURIComponent('https://music.youtube.com/');
 
 let authCache = null;
-let loginWindow = null;
 let homeCache = null;
 
 function safeStorage() {
@@ -369,55 +366,27 @@ function waveTracks(sections) {
   return dedupe(out).slice(0, 30);
 }
 
-function login() {
-  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.focus(); return Promise.resolve({ ok: false, error: 'already open' }); }
-  return new Promise((resolve) => {
-    const { BrowserWindow, session } = require('electron');
-    const ses = session.fromPartition(PARTITION);
-    ses.setUserAgent(UA);
-    const win = new BrowserWindow({
-      width: 520, height: 740, title: 'Sign in to YouTube Music', autoHideMenuBar: true,
-      webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true }
-    });
-    loginWindow = win;
-    let done = false;
-    const finish = (result) => {
-      if (done) return;
-      done = true;
-      loginWindow = null;
-      if (!win.isDestroyed()) win.close();
-      resolve(result);
-    };
-    const check = async () => {
-      if (done || win.isDestroyed()) return;
-      let host = '';
-      try { host = new URL(win.webContents.getURL()).hostname; } catch (e) {}
-      if (host !== 'music.youtube.com') return;
-      try {
-        const cookies = await ses.cookies.get({ url: 'https://music.youtube.com' });
-        const header = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-        if (/(^|;\s*)(SAPISID|__Secure-3PAPISID)=/.test(header)) {
-          saveAuth(header);
-          finish({ ok: true });
-        }
-      } catch (e) {
-        logger.log('warn', `ytm login cookie read failed: ${e.message}`);
-      }
-    };
-    win.webContents.on('did-navigate', check);
-    win.webContents.on('did-navigate-in-page', check);
-    win.webContents.on('did-finish-load', check);
-    win.on('closed', () => finish({ ok: false, error: 'closed' }));
-    win.loadURL(LOGIN_URL, { userAgent: UA }).catch(() => {});
-  });
+// --- Connecting an account -------------------------------------------------
+// Google refuses sign-in inside embedded browser windows, so the user signs in to
+// music.youtube.com in their normal browser and pastes that session's cookie here.
+
+async function connectWithCookie(cookie) {
+  cookie = String(cookie || '').replace(/^cookie:\s*/i, '').replace(/[\r\n]+/g, ' ').trim();
+  if (!/(^|;\s*)(SAPISID|__Secure-3PAPISID)=/.test(cookie)) {
+    return { ok: false, error: 'That cookie does not include a signed-in YouTube session (SAPISID is missing). Copy the whole cookie value.' };
+  }
+  const previous = authCache;
+  saveAuth(cookie);
+  try {
+    const data = await fetchHome(true);
+    if (data.connected) return { ok: true };
+  } catch (e) {}
+  if (previous) saveAuth(previous.cookie); else clearAuth();
+  return { ok: false, error: 'YouTube Music did not accept that session. Make sure you are signed in there, copy the cookie again, and retry.' };
 }
 
 async function logout() {
   clearAuth();
-  try {
-    const { session } = require('electron');
-    await session.fromPartition(PARTITION).clearStorageData();
-  } catch (e) {}
 }
 
 function sendJson(res, code, obj) {
@@ -425,7 +394,7 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const ROUTES = new Set(['/api/ytm-status', '/api/ytm-login', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist']);
+const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist']);
 
 async function handleRoute(parsedUrl, req, res) {
   const p = parsedUrl.pathname;
@@ -433,9 +402,13 @@ async function handleRoute(parsedUrl, req, res) {
     if (p === '/api/ytm-status') {
       return sendJson(res, 200, { success: true, connected: !!loadAuth() });
     }
-    if (p === '/api/ytm-login' && req.method === 'POST') {
-      const result = await login();
-      return sendJson(res, 200, { success: result.ok, error: result.error });
+    if (p === '/api/ytm-import-cookie' && req.method === 'POST') {
+      let body = '';
+      for await (const chunk of req) { body += chunk; if (body.length > 65536) return sendJson(res, 413, { success: false, error: 'too large' }); }
+      let cookie = '';
+      try { cookie = JSON.parse(body).cookie; } catch (e) {}
+      const r = await connectWithCookie(cookie);
+      return sendJson(res, 200, { success: r.ok, error: r.error });
     }
     if (p === '/api/ytm-logout' && req.method === 'POST') {
       await logout();
@@ -479,4 +452,4 @@ async function handleRoute(parsedUrl, req, res) {
   return sendJson(res, 404, { success: false, error: 'not found' });
 }
 
-module.exports = { fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
+module.exports = { connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };

@@ -14665,32 +14665,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderForYouSections(host, sections, tab);
   }
 
+  function openYtmConnectDialog() {
+    if (document.getElementById('ytm-connect-dialog')) return;
+    const overlay = document.createElement('div');
+    overlay.id = 'ytm-connect-dialog';
+    overlay.className = 'ytm-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="ytm-dialog" role="dialog" aria-label="Connect YouTube Music">
+        <h3>Connect YouTube Music</h3>
+        <p class="ytm-dialog-note">Google doesn't allow sign-in inside apps like this, so use your normal browser once:</p>
+        <ol class="ytm-dialog-steps">
+          <li>Open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> in Chrome and make sure you are signed in.</li>
+          <li>Press <b>⌥⌘I</b> to open Developer Tools, go to the <b>Network</b> tab, then press <b>⌘R</b> to reload.</li>
+          <li>Type <b>browse</b> in the filter box, click the first request, open <b>Headers</b> and scroll to <b>Request Headers</b>.</li>
+          <li>Right-click the <b>cookie</b> line, choose <b>Copy value</b>, and paste it below.</li>
+        </ol>
+        <textarea id="ytm-cookie-input" placeholder="Paste the cookie value here" spellcheck="false"></textarea>
+        <div class="ytm-dialog-error" id="ytm-dialog-error"></div>
+        <div class="ytm-dialog-actions">
+          <button class="btn-outline-pill" id="ytm-dialog-cancel">Cancel</button>
+          <button class="btn-pill-primary" id="ytm-dialog-connect"><span>Connect</span></button>
+        </div>
+        <p class="ytm-dialog-privacy">The cookie is stored encrypted on this Mac and only sent to YouTube Music.</p>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#ytm-cookie-input');
+    const errEl = overlay.querySelector('#ytm-dialog-error');
+    const connectBtn = overlay.querySelector('#ytm-dialog-connect');
+    const close = () => overlay.remove();
+    overlay.querySelector('#ytm-dialog-cancel').addEventListener('click', close);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    connectBtn.addEventListener('click', async () => {
+      const cookie = input.value.trim();
+      if (!cookie) { errEl.textContent = 'Paste the cookie value first.'; return; }
+      connectBtn.disabled = true;
+      errEl.textContent = '';
+      connectBtn.querySelector('span').textContent = 'Checking...';
+      try {
+        const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-import-cookie`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookie })
+        });
+        const data = await res.json();
+        if (data.success) {
+          close();
+          showToast('YouTube Music connected');
+          await loadHomePage(true);
+          refreshYtmStatus();
+          return;
+        }
+        errEl.textContent = data.error || 'Could not connect.';
+      } catch (e) {
+        errEl.textContent = 'Request failed. Try again.';
+      }
+      connectBtn.disabled = false;
+      connectBtn.querySelector('span').textContent = 'Connect';
+    });
+    input.focus();
+  }
+
   const btnYtmConnect = document.getElementById('btn-ytm-connect');
   if (btnYtmConnect) {
     btnYtmConnect.addEventListener('click', async () => {
       if (btnYtmConnect.disabled) return;
+      if (!ytmState.connected) { openYtmConnectDialog(); return; }
       btnYtmConnect.disabled = true;
       try {
-        if (ytmState.connected) {
-          await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-logout`, { method: 'POST' });
-          ytmState.connected = false;
-          ytmState.sections = [];
-          Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
-          updateYtmUi();
-          showToast('Disconnected from YouTube Music');
-          if (document.getElementById('view-foryou')?.classList.contains('active')) switchView('discover');
-          await loadHomePage(true);
-        } else {
-          showToast('Sign in to YouTube Music in the window that opened');
-          const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-login`, { method: 'POST' });
-          const data = await res.json();
-          if (data.success) {
-            showToast('YouTube Music connected');
-            await loadHomePage(true);
-          } else if (data.error !== 'closed') {
-            showToast('Could not connect YouTube Music', 'error');
-          }
-        }
+        await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-logout`, { method: 'POST' });
+        ytmState.connected = false;
+        ytmState.sections = [];
+        Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
+        updateYtmUi();
+        showToast('Disconnected from YouTube Music');
+        if (document.getElementById('view-foryou')?.classList.contains('active')) switchView('discover');
+        await loadHomePage(true);
       } catch (e) {
         showToast('YouTube Music request failed', 'error');
       } finally {
