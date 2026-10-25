@@ -319,6 +319,58 @@ function runGUI() {
   ipcMain.removeHandler('pick-media');
   ipcMain.removeHandler('import-audio-files');
 
+  // Edge light overlay: a click-through transparent window over the whole display (notch included)
+  // that draws the music-reactive border light while ambient mode is open.
+  let edgeOverlay = null;
+  let edgeNotch = null;
+  app.whenReady().then(() => {
+    try {
+      const d = screen.getPrimaryDisplay();
+      const bar = d.workArea.y - d.bounds.y;
+      // notched MacBooks have a taller menu bar (37pt) than other displays (24pt)
+      if (process.platform === 'darwin' && bar >= 32) edgeNotch = { w: Math.round(d.bounds.width * 0.115), h: bar - 1 };
+    } catch (_) {}
+  });
+
+  function showEdgeOverlay() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const disp = screen.getDisplayMatching(mainWindow.getBounds());
+    const b = disp.bounds;
+    if (!edgeOverlay || edgeOverlay.isDestroyed()) {
+      edgeOverlay = new BrowserWindow({
+        x: b.x, y: b.y, width: b.width, height: b.height,
+        transparent: true, frame: false, hasShadow: false, resizable: false, movable: false,
+        focusable: false, skipTaskbar: true, show: false, fullscreenable: false,
+        enableLargerThanScreen: true,
+        ...(process.platform === 'darwin' ? { type: 'panel' } : {}),
+        webPreferences: { preload: path.join(__dirname, 'edge-overlay-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+      });
+      edgeOverlay.setIgnoreMouseEvents(true);
+      edgeOverlay.setAlwaysOnTop(true, 'screen-saver');
+      if (process.platform === 'darwin') {
+        edgeOverlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        try { app.dock.show(); } catch (_) {}
+      }
+      edgeOverlay.loadFile(path.join(__dirname, 'edge-overlay.html'));
+      edgeOverlay.webContents.on('did-finish-load', () => {
+        if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
+      });
+    }
+    edgeOverlay.setBounds(b);
+    edgeOverlay.showInactive();
+    logger.log('info', `edge overlay bounds ${JSON.stringify(edgeOverlay.getBounds())} display ${JSON.stringify(b)} notch ${JSON.stringify(edgeNotch)}`);
+  }
+
+  function hideEdgeOverlay() {
+    if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.hide();
+  }
+
+  ipcMain.on('edge-overlay', (e, on) => { if (on) showEdgeOverlay(); else hideEdgeOverlay(); });
+  ipcMain.on('edge-frame', (e, data) => {
+    if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.webContents.send('edge-frame', data);
+  });
+  app.on('before-quit', () => { if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.destroy(); });
+
   ipcMain.on('window-minimize', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
   });

@@ -1,0 +1,149 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const BANDS = 32;
+  const SEGMENTS = 140;
+  let cfg = { notch: null };
+  let colors = { a: [255, 60, 130], b: [120, 90, 255] };
+  let target = new Float32Array(BANDS);
+  let level = new Float32Array(BANDS);
+  let segs = [];
+  let W = 0, H = 0, dpr = 1;
+
+  const hex = (h) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '').trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+
+  // Border path, clockwise from the top-left, rounded like the display and curving around the notch.
+  function buildPath() {
+    const pts = [];
+    const r = 16;
+    const arc = (cx, cy, rad, a0, a1) => {
+      const n = 10;
+      for (let i = 1; i <= n; i++) {
+        const a = a0 + ((a1 - a0) * i) / n;
+        pts.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a)]);
+      }
+    };
+    const line = (x0, y0, x1, y1) => {
+      const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / 6));
+      for (let i = 1; i <= n; i++) pts.push([x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
+    };
+    const inset = 2;
+    const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
+    pts.push([x0 + r, y0]);
+    if (cfg.notch) {
+      const m = 3, rn = 10;
+      const cx = W / 2;
+      const nl = cx - cfg.notch.w / 2 - m, nr = cx + cfg.notch.w / 2 + m, nb = cfg.notch.h + m;
+      line(x0 + r, y0, nl - rn, y0);
+      arc(nl - rn, y0 + rn, rn, -Math.PI / 2, 0);
+      line(nl, y0 + rn, nl, nb - rn);
+      arc(nl + rn, nb - rn, rn, Math.PI, Math.PI / 2);
+      line(nl + rn, nb, nr - rn, nb);
+      arc(nr - rn, nb - rn, rn, Math.PI / 2, 0);
+      line(nr, nb - rn, nr, y0 + rn);
+      arc(nr + rn, y0 + rn, rn, Math.PI, Math.PI * 1.5);
+      line(nr + rn, y0, x1 - r, y0);
+    } else {
+      line(x0 + r, y0, x1 - r, y0);
+    }
+    arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
+    line(x1, y0 + r, x1, y1 - r);
+    arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
+    line(x1 - r, y1, x0 + r, y1);
+    arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
+    line(x0, y1 - r, x0, y0 + r);
+    arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
+
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const L = cum[cum.length - 1];
+    segs = [];
+    let j = 0;
+    for (let k = 0; k < SEGMENTS; k++) {
+      const s0 = (k / SEGMENTS) * L, s1 = ((k + 1) / SEGMENTS) * L + 0.75;
+      const poly = [];
+      while (j > 0 && cum[j] > s0) j--;
+      let i = j;
+      while (i < pts.length - 1 && cum[i + 1] < s0) i++;
+      j = i;
+      for (let q = i; q < pts.length && cum[q] <= s1; q++) poly.push(pts[q]);
+      if (poly.length >= 2) segs.push({ poly, s: (k + 0.5) / SEGMENTS });
+    }
+  }
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildPath();
+  }
+  window.addEventListener('resize', resize);
+
+  window.edgeOverlay.onConfig((c) => { cfg = c || cfg; resize(); });
+  window.edgeOverlay.onFrame((d) => {
+    if (!d) return;
+    const a = hex(d.a), b = hex(d.b);
+    if (a) colors.a = a;
+    if (b) colors.b = b;
+    if (Array.isArray(d.bands)) for (let i = 0; i < BANDS; i++) target[i] = d.bands[i] || 0;
+  });
+
+  const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
+  const rgba = (c, al) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${al})`;
+  let last = 0;
+
+  function draw(ts) {
+    requestAnimationFrame(draw);
+    if (ts - last < 24) return;
+    last = ts;
+    for (let i = 0; i < BANDS; i++) {
+      const t = target[i];
+      level[i] += (t - level[i]) * (t > level[i] ? 0.6 : 0.12);
+    }
+    ctx.clearRect(0, 0, W, H);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const drift = ts / 14000;
+    const passes = [[8, 0.10], [3.4, 0.22], [1, 1]];
+    for (const [mul, alpha] of passes) {
+      ctx.globalCompositeOperation = mul === 1 ? 'source-over' : 'lighter';
+      ctx.lineCap = mul === 1 ? 'round' : 'butt';
+      for (const sg of segs) {
+        const t = Math.abs((sg.s * 2) % 2 - 1);
+        const v = level[Math.min(BANDS - 1, Math.floor(t * (BANDS - 1)))];
+        const col = mix(colors.a, colors.b, 0.5 + 0.5 * Math.sin((sg.s * 2 + drift) * Math.PI * 2));
+        const base = 3 + v * 7;
+        ctx.lineWidth = base * mul;
+        ctx.strokeStyle = rgba(col, alpha * (0.62 + 0.38 * v));
+        ctx.beginPath();
+        ctx.moveTo(sg.poly[0][0], sg.poly[0][1]);
+        for (let i = 1; i < sg.poly.length; i++) ctx.lineTo(sg.poly[i][0], sg.poly[i][1]);
+        ctx.stroke();
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  resize();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

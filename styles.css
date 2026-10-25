@@ -7861,3 +7861,6 @@ body.mini #edge-glow { border-radius: 10px; }
 .home-foryou { padding: 4px 4px 24px; }
 .home-foryou.hidden { display: none; }
 .home-foryou .view-header { margin-bottom: 14px; }
+
+/* The edge light is drawn by a separate overlay window over the whole display */
+#edge-glow { display: none !important; }

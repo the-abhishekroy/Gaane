@@ -14477,6 +14477,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (open === ambientOpen) return;
       ambientOpen = open;
       if (window.electronAPI && window.electronAPI.setFullscreen) window.electronAPI.setFullscreen(open);
+      if (window.electronAPI && window.electronAPI.setEdgeOverlay) window.electronAPI.setEdgeOverlay(open);
       syncEdgeGlow();
     };
     new MutationObserver(apply).observe(tv, { attributes: true, attributeFilter: ['class'] });
@@ -14486,6 +14487,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let edgeGlowOn = true;
   try { edgeGlowOn = localStorage.getItem('gaane_edge_glow') !== '0'; } catch (_) {}
   let edgeCoverKey = '';
+  let edgeColorA = '#ff3c82';
+  let edgeColorB = '#785aff';
   let edgePulse = 0;
   let edgeFreq = null;
   let edgeLastFrame = 0;
@@ -14508,35 +14511,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     analyzeCover(thumb).then((a) => {
       if (edgeCoverKey !== thumb) return;
       const root = document.documentElement.style;
-      root.setProperty('--edge-a', vividEdgeColor(a.accent, 0));
+      edgeColorA = vividEdgeColor(a.accent, 0);
+      root.setProperty('--edge-a', edgeColorA);
       let second = a.accent;
       try {
         const c = hexToRgb(a.accent);
         const hsl = rgbToHsl(c.r, c.g, c.b);
         second = hslToHex((hsl.h + 28) % 360, hsl.s, hsl.l);
       } catch (_) {}
-      root.setProperty('--edge-b', vividEdgeColor(second, 8));
+      edgeColorB = vividEdgeColor(second, 8);
+      root.setProperty('--edge-b', edgeColorB);
     });
   }
   setInterval(syncEdgeGlow, 700);
 
   function edgePulseLoop(ts) {
     requestAnimationFrame(edgePulseLoop);
-    if (!ambientOpen || !edgeGlowOn || !state.isPlaying || document.hidden || ts - edgeLastFrame < 40) return;
+    if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 33) return;
     edgeLastFrame = ts;
     try {
-      if (!edgeFreq) {
-        const an = audioEngine && audioEngine.getAnalyserNode && audioEngine.getAnalyserNode();
-        if (!an) return;
-        edgeFreq = new Uint8Array(an.frequencyBinCount);
+      let bands = new Array(32).fill(0);
+      if (state.isPlaying) {
+        if (!edgeFreq) {
+          const an = audioEngine && audioEngine.getAnalyserNode && audioEngine.getAnalyserNode();
+          if (!an) return;
+          edgeFreq = new Uint8Array(an.frequencyBinCount);
+        }
+        audioEngine.getFrequencyData(edgeFreq);
+        const n = edgeFreq.length;
+        // log-spaced groups so bass, mids and treble each get their share of the border
+        for (let i = 0; i < 32; i++) {
+          const lo = Math.floor(Math.pow(i / 32, 1.7) * n);
+          const hi = Math.max(lo + 1, Math.floor(Math.pow((i + 1) / 32, 1.7) * n));
+          let sum = 0;
+          for (let k = lo; k < hi && k < n; k++) sum += edgeFreq[k];
+          bands[i] = Math.min(1, Math.pow(sum / ((hi - lo) * 255), 1.35) * 1.5);
+        }
       }
-      audioEngine.getFrequencyData(edgeFreq);
-      let sum = 0;
-      const n = Math.min(6, edgeFreq.length);
-      for (let i = 0; i < n; i++) sum += edgeFreq[i];
-      const level = Math.min(1, Math.pow(sum / (n * 255), 1.6) * 1.4);
-      edgePulse += (level - edgePulse) * (level > edgePulse ? 0.55 : 0.15);
-      document.documentElement.style.setProperty('--edge-pulse', edgePulse.toFixed(3));
+      if (window.electronAPI && window.electronAPI.sendEdgeFrame) window.electronAPI.sendEdgeFrame({ bands, a: edgeColorA, b: edgeColorB });
     } catch (_) {}
   }
   requestAnimationFrame(edgePulseLoop);

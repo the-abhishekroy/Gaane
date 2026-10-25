@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close'),
   setFullscreen: (v) => ipcRenderer.send('window-set-fullscreen', !!v),
+  setEdgeOverlay: (v) => ipcRenderer.send('edge-overlay', !!v),
+  sendEdgeFrame: (d) => ipcRenderer.send('edge-frame', d),
   getServerPort: () => ipcRenderer.invoke('get-server-port'),
   getGpuCompositing: () => ipcRenderer.invoke('get-gpu-compositing'),
   pickMedia: () => ipcRenderer.invoke('pick-media'),
