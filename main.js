@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { pathToFileURL } = require('url');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const { LIBRARY_DIR, DATA_DIR, resolveBinary, tutorialDone, markTutorialDone, readStartupConfig, writeStartupConfig } = require('./platform');
 const { getLauncherInfo, installLauncher } = require('./launcher');
@@ -20,6 +20,21 @@ process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled rejection in main', err);
   } catch (_) {}
 });
+
+
+// After Gaane has been copied to Applications, eject any leftover installer disk images.
+function ejectInstallerVolumes() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return;
+  try {
+    if (typeof app.isInApplicationsFolder === 'function' && !app.isInApplicationsFolder()) return;
+    for (const name of fs.readdirSync('/Volumes')) {
+      if (/^Gaane \d/.test(name) && fs.existsSync(path.join('/Volumes', name, 'Gaane.app'))) {
+        execFile('/usr/bin/hdiutil', ['detach', path.join('/Volumes', name), '-force'], () => {});
+      }
+    }
+  } catch (e) {}
+}
+app.whenReady().then(ejectInstallerVolumes);
 
 const enabledFeatures = [];
 if (process.platform === 'linux') {
