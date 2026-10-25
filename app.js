@@ -7793,6 +7793,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (el.viewFavorites) el.viewFavorites.classList.add('active');
             if (el.navFavorites) el.navFavorites.classList.add('active');
             renderFavoritesView();
+            if (typeof renderYtmFavorites === 'function') renderYtmFavorites();
           } else if (viewName === 'local') {
             if (el.viewLocal) el.viewLocal.classList.add('active');
             if (el.navLocal) el.navLocal.classList.add('active');
@@ -7801,6 +7802,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (el.viewHistory) el.viewHistory.classList.add('active');
             if (el.navHistory) el.navHistory.classList.add('active');
             renderHistoryView();
+            if (typeof renderYtmHistory === 'function') renderYtmHistory();
           } else if (viewName === 'foryou') {
             const fy = document.getElementById('view-foryou');
             if (fy) fy.classList.add('active');
@@ -14519,7 +14521,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   requestAnimationFrame(edgePulseLoop);
 
-  const ytmState = { connected: false, sections: [], loadedAt: 0 };
+  const ytmState = { connected: false, sections: [], chips: [], loadedAt: 0 };
 
   function updateYtmUi() {
     const btn = document.getElementById('btn-ytm-connect');
@@ -14543,20 +14545,36 @@ document.addEventListener('DOMContentLoaded', async () => {
     return ytmState.connected;
   }
 
+  const forYouCache = {};
+
+  async function fetchYtmHome(params, force) {
+    const key = params || '';
+    if (!force && forYouCache[key]) return forYouCache[key];
+    const q = [];
+    if (force) q.push('refresh=1');
+    if (params) q.push(`params=${encodeURIComponent(params)}`);
+    const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-home${q.length ? '?' + q.join('&') : ''}`);
+    const data = await res.json();
+    if (data.expired) {
+      ytmState.connected = false;
+      ytmState.sections = [];
+      updateYtmUi();
+      showToast('YouTube Music session expired. Connect again.', 'error');
+      return null;
+    }
+    if (!data.success) return null;
+    forYouCache[key] = data;
+    return data;
+  }
+
   async function loadYtmRecommendations(force) {
     if (!(await refreshYtmStatus())) return [];
     try {
-      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-home${force ? '?refresh=1' : ''}`);
-      const data = await res.json();
-      if (data.expired) {
-        ytmState.connected = false;
-        ytmState.sections = [];
-        updateYtmUi();
-        showToast('YouTube Music session expired. Connect again.', 'error');
-        return [];
-      }
-      if (!data.success) return [];
+      if (force) Object.keys(forYouCache).forEach(k => delete forYouCache[k]);
+      const data = await fetchYtmHome('', force);
+      if (!data) return [];
       ytmState.sections = data.sections || [];
+      ytmState.chips = data.chips || [];
       ytmState.loadedAt = Date.now();
       if (document.getElementById('view-foryou')?.classList.contains('active')) renderForYouView();
       return data.wave || [];
@@ -14578,14 +14596,145 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('Could not load that item', 'error');
   }
 
+  // Album/playlist/mix detail: reuses the app's album page.
+  async function openYtmCollection(item) {
+    if (item.kind === 'artist') {
+      if (typeof openArtistProfile === 'function') openArtistProfile(item.title);
+      return;
+    }
+    const runId = ++currentAlbumRunId;
+    state.previousView = state.currentView;
+    switchView('album');
+    const cover = item.thumbnail || '';
+    const coverEl = document.getElementById('album-detail-cover');
+    if (coverEl) {
+      coverEl.innerHTML = cover
+        ? `<img src="${escapeHtml(cover)}" alt="" style="width:100%;height:100%;aspect-ratio:1;border-radius:20px;object-fit:cover;box-shadow:none;" />`
+        : '<div style="width:100%;height:100%;aspect-ratio:1;border-radius:20px;background:var(--md-sys-color-surface-container);"></div>';
+    }
+    const titleEl = document.getElementById('album-detail-title');
+    if (titleEl) titleEl.textContent = item.title || 'Untitled';
+    const artistBtn = document.getElementById('album-detail-artist');
+    if (artistBtn) { artistBtn.textContent = item.subtitle || ''; artistBtn.onclick = null; }
+    const countEl = document.getElementById('album-detail-count');
+    if (countEl) countEl.textContent = 'YouTube Music';
+    const heroFx = document.getElementById('album-hero-fx');
+    if (heroFx) heroFx.style.backgroundImage = cover ? `url("${cover}")` : '';
+    const playBtn = document.getElementById('btn-play-album');
+    if (playBtn) { playBtn.disabled = true; playBtn.onclick = null; }
+    const listEl = document.getElementById('album-tracks-list');
+    if (listEl) listEl.innerHTML = getWaveSpinnerHtml();
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-collection?id=${encodeURIComponent(item.id)}`);
+      const data = await res.json();
+      if (currentAlbumRunId !== runId) return;
+      if (!data.success || !data.tracks || !data.tracks.length) throw new Error('empty');
+      const tracks = data.tracks;
+      if (countEl) countEl.textContent = `YouTube Music · ${tracks.length} tracks`;
+      if (playBtn) { playBtn.disabled = false; playBtn.onclick = () => playTrack(tracks[0], tracks.slice(), 0); }
+      if (listEl) {
+        listEl.innerHTML = '';
+        const currentId = state.currentTrack ? getTrackCanonicalId(state.currentTrack) : '';
+        tracks.forEach((t, idx) => {
+          const row = createTrackRow(t, idx, currentId, 'album', tracks, listEl);
+          row.addEventListener('click', (e) => {
+            if (e.target.closest('.track-row-actions')) return;
+            e.stopImmediatePropagation();
+            playTrack(t, tracks.slice(), idx);
+          }, true);
+          listEl.appendChild(row);
+        });
+      }
+    } catch (e) {
+      if (listEl && currentAlbumRunId === runId) listEl.innerHTML = '<div class="empty-hint">Could not load this one.</div>';
+    }
+  }
+
+  // --- YouTube Music shelves, laid out like the YouTube Music app ---------------------------------
+  function ytItemsOf(sec) {
+    if (sec.items && sec.items.length) return sec.items;
+    return [...(sec.collections || []).map(c => c), ...(sec.tracks || []).map(t => ({ kind: 'track', track: t }))];
+  }
+
+  function ytActivate(it, sec) {
+    if (it.kind === 'track') {
+      const idx = sec.tracks.indexOf(it.track);
+      playTrack(it.track, sec.tracks.slice(), Math.max(0, idx));
+    } else {
+      openYtmCollection(it);
+    }
+  }
+
+  function ytCard(it, sec, wide) {
+    const t = it.kind === 'track' ? it.track : it;
+    const card = document.createElement('button');
+    card.className = 'yt-card' + (wide ? ' wide' : '');
+    const img = document.createElement('img');
+    img.loading = 'lazy'; img.alt = ''; img.src = t.thumbnail || '';
+    if (it.kind === 'artist') img.classList.add('round');
+    const title = document.createElement('span'); title.className = 'yt-card-title'; title.textContent = t.title;
+    const sub = document.createElement('span'); sub.className = 'yt-card-sub'; sub.textContent = it.kind === 'track' ? t.artist : (it.subtitle || '');
+    const play = document.createElement('span'); play.className = 'yt-card-play'; play.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="8 5 19 12 8 19"></polygon></svg>';
+    const wrap = document.createElement('span'); wrap.className = 'yt-card-img'; wrap.append(img, play);
+    card.append(wrap, title, sub);
+    card.addEventListener('click', () => ytActivate(it, sec));
+    return card;
+  }
+
+  function ytRowItem(t, sec) {
+    const row = document.createElement('button');
+    row.className = 'yt-row-item';
+    row.innerHTML = '<img loading="lazy" alt=""><span class="yt-row-text"><span class="yt-card-title"></span><span class="yt-card-sub"></span></span>';
+    row.querySelector('img').src = t.thumbnail || '';
+    row.querySelector('.yt-card-title').textContent = t.title;
+    row.querySelector('.yt-card-sub').textContent = t.artist || '';
+    row.addEventListener('click', () => playTrack(t, sec.tracks.slice(), Math.max(0, sec.tracks.indexOf(t))));
+    return row;
+  }
+
+  function buildYtShelf(sec, opts = {}) {
+    const wrap = document.createElement('section');
+    wrap.className = 'yt-shelf';
+    const head = document.createElement('div');
+    head.className = 'yt-shelf-head';
+    const h = document.createElement('h3'); h.textContent = sec.title || opts.fallbackTitle || '';
+    head.appendChild(h);
+    const actions = document.createElement('div'); actions.className = 'yt-shelf-actions';
+    if ((sec.tracks || []).length > 1 && sec.layout !== 'grid') {
+      const pa = document.createElement('button'); pa.className = 'btn-outline-pill'; pa.textContent = 'Play all';
+      pa.addEventListener('click', () => playTrack(sec.tracks[0], sec.tracks.slice(), 0));
+      actions.appendChild(pa);
+    }
+    const layout = opts.layout || sec.layout || 'cards';
+    const body = document.createElement('div');
+    if (layout === 'rows') {
+      body.className = 'yt-rows';
+      (sec.tracks || []).slice(0, opts.limit || 200).forEach((t) => body.appendChild(ytRowItem(t, sec)));
+    } else {
+      const scroller = layout === 'list' ? 'yt-list' : layout === 'grid' ? 'yt-grid' : 'yt-scroll' + (layout === 'wide' ? ' wide' : '');
+      body.className = scroller;
+      if (layout === 'list') (sec.tracks || []).forEach((t) => body.appendChild(ytRowItem(t, sec)));
+      else ytItemsOf(sec).forEach((it) => body.appendChild(ytCard(it, sec, layout === 'wide')));
+      if (body.scrollWidth !== undefined) {
+        const mk = (dir, label) => {
+          const b = document.createElement('button'); b.className = 'yt-arrow'; b.setAttribute('aria-label', label);
+          b.innerHTML = dir < 0 ? '&#8249;' : '&#8250;';
+          b.addEventListener('click', () => body.scrollBy({ left: dir * body.clientWidth * 0.85, behavior: 'smooth' }));
+          return b;
+        };
+        actions.append(mk(-1, 'Scroll left'), mk(1, 'Scroll right'));
+      }
+    }
+    head.appendChild(actions);
+    wrap.append(head, body);
+    return wrap;
+  }
+
   let forYouTab = 'home';
+  let forYouChip = '';
   const forYouTabData = {};
 
   async function loadForYouTab(tab, force) {
-    if (tab === 'home') {
-      if (force || !ytmState.sections.length) await loadYtmRecommendations(force);
-      return ytmState.sections;
-    }
     if (!force && forYouTabData[tab]) return forYouTabData[tab];
     try {
       const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-tab?tab=${tab}${force ? '&refresh=1' : ''}`);
@@ -14596,53 +14745,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     return forYouTabData[tab] || [];
   }
 
-  function renderForYouSections(host, sections, tab) {
+  function renderYtChips(chips) {
+    const host = document.getElementById('foryou-chips');
+    if (!host) return;
     host.innerHTML = '';
-    if (!sections.length) {
-      host.innerHTML = '<div class="empty-hint">Nothing here yet.</div>';
-      return;
-    }
-    sections.forEach((sec) => {
-      const wrap = document.createElement('div');
-      wrap.className = 'foryou-shelf';
-      const h = document.createElement('h3');
-      h.className = 'foryou-shelf-title';
-      h.textContent = sec.title;
-      wrap.appendChild(h);
-      if (tab === 'history') {
-        const list = document.createElement('div');
-        list.className = 'foryou-list';
-        (sec.tracks || []).forEach((t, i) => {
-          const row = document.createElement('button');
-          row.className = 'foryou-list-row';
-          row.innerHTML = '<img loading="lazy" alt=""><span class="foryou-list-text"><span class="foryou-card-title"></span><span class="foryou-card-sub"></span></span>';
-          row.querySelector('img').src = t.thumbnail || '';
-          row.querySelector('.foryou-card-title').textContent = t.title;
-          row.querySelector('.foryou-card-sub').textContent = t.artist;
-          row.addEventListener('click', () => playTrack(t, sec.tracks.slice(), i));
-          list.appendChild(row);
-        });
-        wrap.appendChild(list);
-      } else {
-        const row = document.createElement('div');
-        row.className = 'foryou-shelf-row';
-        const addCard = (thumb, title, sub, round, onClick) => {
-          const card = document.createElement('button');
-          card.className = 'foryou-card';
-          card.innerHTML = `<img loading="lazy" alt=""><span class="foryou-card-title"></span><span class="foryou-card-sub"></span>`;
-          if (round) card.querySelector('img').classList.add('round');
-          card.querySelector('img').src = thumb || '';
-          card.querySelector('.foryou-card-title').textContent = title;
-          card.querySelector('.foryou-card-sub').textContent = sub || '';
-          card.addEventListener('click', onClick);
-          row.appendChild(card);
-        };
-        (sec.collections || []).forEach((c) => addCard(c.thumbnail, c.title, c.subtitle, c.kind === 'artist', () => playYtmCollection(c)));
-        (sec.tracks || []).forEach((t, i) => addCard(t.thumbnail, t.title, t.artist, false, () => playTrack(t, sec.tracks.slice(), i)));
-        wrap.appendChild(row);
-      }
-      host.appendChild(wrap);
-    });
+    if (forYouTab !== 'home' || !chips || !chips.length) return;
+    const mk = (label, params) => {
+      const b = document.createElement('button');
+      b.className = 'yt-chip' + (forYouChip === params ? ' active' : '');
+      b.textContent = label;
+      b.addEventListener('click', () => { forYouChip = forYouChip === params ? '' : params; renderForYouView(false); });
+      host.appendChild(b);
+    };
+    chips.forEach((c) => mk(c.title, c.params));
   }
 
   async function renderForYouView(force) {
@@ -14651,18 +14766,64 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('#foryou-tabs .foryou-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === forYouTab));
     if (!ytmState.connected) {
       host.innerHTML = '<div class="empty-hint">Connect YouTube Music from My Wave to see your recommendations.</div>';
+      document.getElementById('foryou-chips').innerHTML = '';
       return;
     }
     const tab = forYouTab;
-    const cached = tab === 'home' ? ytmState.sections : forYouTabData[tab];
-    if (!force && cached && cached.length) {
-      renderForYouSections(host, cached, tab);
-      return;
-    }
+    const chip = forYouChip;
     host.innerHTML = getWaveSpinnerHtml();
-    const sections = await loadForYouTab(tab, force);
-    if (tab !== forYouTab) return;
-    renderForYouSections(host, sections, tab);
+    let sections = [];
+    if (tab === 'home') {
+      try {
+        const data = await fetchYtmHome(chip, force && !chip);
+        if (data) { sections = data.sections || []; if (!chip) { ytmState.sections = sections; ytmState.chips = data.chips || []; } }
+      } catch (e) {}
+      renderYtChips(ytmState.chips);
+    } else {
+      renderYtChips([]);
+      sections = await loadForYouTab(tab, force);
+    }
+    if (tab !== forYouTab || chip !== forYouChip) return;
+    host.innerHTML = '';
+    if (!sections.length) { host.innerHTML = '<div class="empty-hint">Nothing here yet.</div>'; return; }
+    sections.forEach((sec) => host.appendChild(buildYtShelf(sec)));
+  }
+
+  // Favorites page: your YouTube Music likes, albums, playlists and artists below the local favorites.
+  async function renderYtmFavorites() {
+    const host = document.getElementById('ytm-favorites');
+    if (!host) return;
+    if (!ytmState.connected) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+    host.classList.remove('hidden');
+    if (!host.firstChild) host.innerHTML = getWaveSpinnerHtml();
+    const sections = await loadForYouTab('library', false);
+    if (state.currentView !== 'favorites') return;
+    host.innerHTML = '';
+    const title = document.createElement('h3'); title.className = 'ytm-section-title'; title.textContent = 'From YouTube Music';
+    host.appendChild(title);
+    sections.forEach((sec) => {
+      const isLiked = /liked songs/i.test(sec.title);
+      host.appendChild(buildYtShelf(sec, { layout: isLiked ? 'rows' : 'cards', limit: 300 }));
+    });
+    if (!sections.length) host.innerHTML += '<div class="empty-hint">Nothing saved in your YouTube Music library yet.</div>';
+  }
+
+  // History page: your YouTube Music listening history, grouped by day, above the local history.
+  async function renderYtmHistory() {
+    const host = document.getElementById('ytm-history');
+    if (!host) return;
+    if (!ytmState.connected) { host.classList.add('hidden'); host.innerHTML = ''; return; }
+    host.classList.remove('hidden');
+    if (!host.firstChild) host.innerHTML = getWaveSpinnerHtml();
+    const sections = await loadForYouTab('history', false);
+    if (state.currentView !== 'history') return;
+    host.innerHTML = '';
+    const title = document.createElement('h3'); title.className = 'ytm-section-title'; title.textContent = 'YouTube Music history';
+    host.appendChild(title);
+    sections.forEach((sec) => host.appendChild(buildYtShelf(sec, { layout: 'rows', limit: 60 })));
+    if (!sections.length) host.innerHTML += '<div class="empty-hint">No YouTube Music history yet.</div>';
+    const local = document.createElement('h3'); local.className = 'ytm-section-title'; local.textContent = 'Played in Gaane';
+    host.appendChild(local);
   }
 
   function openYtmConnectDialog() {

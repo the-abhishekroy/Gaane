@@ -39,12 +39,14 @@ function saveAuth(cookie) {
   fs.writeFileSync(AUTH_PATH, JSON.stringify(payload), { mode: 0o600 });
   authCache = { cookie };
   homeCache = null;
+  homeCacheByParams.clear();
   tabCache.clear();
 }
 
 function clearAuth() {
   authCache = null;
   homeCache = null;
+  homeCacheByParams.clear();
   tabCache.clear();
   try { fs.unlinkSync(AUTH_PATH); } catch (e) {}
 }
@@ -162,7 +164,7 @@ function parseListItem(r) {
   return makeTrack(videoId, title, artist.replace(/\s*-\s*Topic$/i, '').trim(), duration, bestThumb(thumbs, videoId));
 }
 
-function parseTwoRowItem(r) {
+function parseTwoRowItemInner(r) {
   const title = runsText(r.title).trim();
   if (!title) return null;
   const nav = r.navigationEndpoint || {};
@@ -188,20 +190,30 @@ function parseTwoRowItem(r) {
   return null;
 }
 
+function parseTwoRowItem(r) {
+  const it = parseTwoRowItemInner(r);
+  if (it) {
+    const wide = /16_9|RECTANGULAR/i.test(r.aspectRatio || '');
+    if (it.kind === 'track') it.track.wide = wide; else it.wide = wide;
+  }
+  return it;
+}
+
 function parseShelfItems(contents) {
   const tracks = [];
   const collections = [];
+  const items = [];
   for (const wrap of contents || []) {
     if (wrap.musicResponsiveListItemRenderer) {
       const t = parseListItem(wrap.musicResponsiveListItemRenderer);
-      if (t) tracks.push(t);
+      if (t) { t.list = true; tracks.push(t); items.push({ kind: 'track', track: t }); }
     } else if (wrap.musicTwoRowItemRenderer) {
       const it = parseTwoRowItem(wrap.musicTwoRowItemRenderer);
-      if (it && it.kind === 'track') tracks.push(it.track);
-      else if (it) collections.push(it);
+      if (it && it.kind === 'track') { tracks.push(it.track); items.push(it); }
+      else if (it) { collections.push(it); items.push(it); }
     }
   }
-  return { tracks, collections };
+  return { tracks, collections, items };
 }
 
 const SHELF_KEYS = ['musicCarouselShelfRenderer', 'musicImmersiveCarouselShelfRenderer', 'musicShelfRenderer', 'musicPlaylistShelfRenderer', 'gridRenderer'];
@@ -217,8 +229,17 @@ function walkShelves(node, out, depth = 0) {
   for (const key of Object.keys(node)) {
     if (SHELF_KEYS.includes(key)) {
       const shelf = node[key];
-      const { tracks, collections } = parseShelfItems(shelf.contents || shelf.items);
-      if (tracks.length || collections.length) out.push({ title: shelfTitle(shelf), tracks, collections });
+      const { tracks, collections, items } = parseShelfItems(shelf.contents || shelf.items);
+      if (tracks.length || collections.length) {
+        const title = shelfTitle(shelf);
+        const all = tracks.length + collections.length;
+        const wideCount = tracks.filter((t) => t.wide).length + collections.filter((c) => c.wide).length;
+        let layout = 'cards';
+        if (/speed dial/i.test(title)) layout = 'grid';
+        else if (tracks.length && !collections.length && tracks.every((t) => t.list)) layout = 'list';
+        else if (wideCount > all / 2) layout = 'wide';
+        out.push({ title, layout, tracks, collections, items });
+      }
     } else {
       walkShelves(node[key], out, depth + 1);
     }
@@ -289,8 +310,8 @@ const TAB_PAGES = {
 };
 const tabCache = new Map();
 
-async function fetchPaged(browseId, maxPages) {
-  const first = await ytmRequest('browse', { browseId });
+async function fetchPaged(browseId, maxPages, params = '') {
+  const first = await ytmRequest('browse', params ? { browseId, params } : { browseId });
   const visitorData = (first.responseContext && first.responseContext.visitorData) || '';
   let { sections, continuation } = parseHomeSections(first);
   for (let i = 0; i < maxPages && continuation; i++) {
@@ -299,7 +320,7 @@ async function fetchPaged(browseId, maxPages) {
       const parsed = parseHomeSections(next);
       if (parsed.sections.length && parsed.sections.every((x) => !x.title) && sections.length) {
         const last = sections[sections.length - 1];
-        parsed.sections.forEach((x) => { last.tracks.push(...x.tracks); last.collections.push(...x.collections); });
+        parsed.sections.forEach((x) => { last.tracks.push(...x.tracks); last.collections.push(...x.collections); last.items = (last.items || []).concat(x.items || []); });
       } else {
         sections = sections.concat(parsed.sections);
       }
@@ -309,21 +330,34 @@ async function fetchPaged(browseId, maxPages) {
   return { first, sections };
 }
 
-async function fetchHome(force) {
-  if (!force && homeCache && Date.now() - homeCache.at < 5 * 60 * 1000) return homeCache.data;
-  const { first, sections: homeSections } = await fetchPaged('FEmusic_home', 10);
+function findChips(node, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 14) return null;
+  if (node.chipCloudRenderer && Array.isArray(node.chipCloudRenderer.chips)) {
+    return node.chipCloudRenderer.chips.map((c) => {
+      const r = c.chipCloudChipRenderer || {};
+      const be = r.navigationEndpoint && r.navigationEndpoint.browseEndpoint;
+      const text = runsText(r.text) || (typeof r.text === 'string' ? r.text : '');
+      return text && be && be.params ? { title: text, params: be.params, selected: !!r.isSelected } : null;
+    }).filter(Boolean);
+  }
+  for (const key of Object.keys(node)) {
+    const r = findChips(node[key], depth + 1);
+    if (r) return r;
+  }
+  return null;
+}
+
+const homeCacheByParams = new Map();
+
+async function fetchHome(force, params = '') {
+  const hit = homeCacheByParams.get(params);
+  if (!force && hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.data;
+  const { first, sections: homeSections } = await fetchPaged('FEmusic_home', params ? 3 : 10, params);
   const connected = isLoggedInResponse(first);
   const sections = homeSections.slice();
-  if (connected) {
-    try {
-      const liked = dedupe(collectListItems(await ytmRequest('browse', { browseId: 'FEmusic_liked_videos' }), [])).slice(0, 60);
-      if (liked.length) sections.push({ title: 'Your liked songs', tracks: liked, collections: [] });
-    } catch (e) {
-      logger.log('warn', `ytm liked songs failed: ${e.message}`);
-    }
-  }
-  const data = { connected, sections };
-  homeCache = { at: Date.now(), data };
+  const chips = findChips(first) || [];
+  const data = { connected, sections, chips };
+  homeCacheByParams.set(params, { at: Date.now(), data });
   return data;
 }
 
@@ -419,12 +453,12 @@ async function handleRoute(parsedUrl, req, res) {
       return sendJson(res, 200, { success: true });
     }
     if (p === '/api/ytm-home') {
-      const data = await fetchHome(parsedUrl.query.refresh === '1');
+      const data = await fetchHome(parsedUrl.query.refresh === '1', String(parsedUrl.query.params || ''));
       if (!data.connected && loadAuth()) {
         clearAuth();
         return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music session expired' });
       }
-      return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, wave: waveTracks(data.sections) });
+      return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, chips: data.chips, wave: waveTracks(data.sections) });
     }
     if (p === '/api/ytm-tab') {
       const tab = String(parsedUrl.query.tab || '');
