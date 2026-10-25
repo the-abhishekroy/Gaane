@@ -14711,8 +14711,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (data.success) {
           close();
           showToast('YouTube Music connected');
-          await loadHomePage(true);
-          refreshYtmStatus();
+          await refreshYtmStatus();
+          forYouTab = 'home';
+          Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
+          ytmState.sections = [];
+          switchView('foryou');
+          loadHomePage(true);
           return;
         }
         errEl.textContent = data.error || 'Could not connect.';

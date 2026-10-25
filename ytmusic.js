@@ -283,7 +283,7 @@ function dedupe(tracks) {
 }
 
 const TAB_PAGES = {
-  library: [['FEmusic_liked_playlists', 'Playlists'], ['FEmusic_liked_albums', 'Albums'], ['FEmusic_library_corpus_artists', 'Artists']],
+  library: [['FEmusic_liked_videos', 'Liked songs'], ['FEmusic_liked_playlists', 'Playlists'], ['FEmusic_liked_albums', 'Albums'], ['FEmusic_library_corpus_artists', 'Artists']],
   history: [['FEmusic_history', 'History']],
   explore: [['FEmusic_explore', 'Explore'], ['FEmusic_charts', 'Charts'], ['FEmusic_new_releases_albums', 'New releases']]
 };
@@ -334,6 +334,10 @@ async function fetchTab(tab, force) {
   if (!pages) return [];
   const results = await Promise.all(pages.map(async ([id, label]) => {
     try {
+      if (id === 'FEmusic_liked_videos') {
+        const liked = dedupe(collectListItems(await ytmRequest('browse', { browseId: id }), []));
+        return liked.length ? [{ title: label, tracks: liked, collections: [] }] : [];
+      }
       const { sections } = await fetchPaged(id, tab === 'history' ? 6 : 3);
       return sections.map((sec) => ({ ...sec, title: sec.title ? (tab === 'history' ? sec.title : `${label}: ${sec.title}`) : label }));
     } catch (e) {
