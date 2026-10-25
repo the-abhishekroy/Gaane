@@ -132,10 +132,10 @@ async function installFfmpeg() {
   const sums = await getText(`${base}/checksums.sha256`);
   const want = expectedHash(sums, asset.name);
   if (!want) throw new Error(`No checksum published for ${asset.name}`);
-  const archive = path.join(os.tmpdir(), `riff-${asset.name}`);
+  const archive = path.join(os.tmpdir(), `gaane-${asset.name}`);
   const got = await downloadFile(`${base}/${asset.name}`, archive);
   if (got !== want) { fs.rmSync(archive, { force: true }); throw new Error('ffmpeg checksum mismatch'); }
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'riff-ffmpeg-'));
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'gaane-ffmpeg-'));
   try {
     await run('tar', ['-xf', archive, '-C', work]);
     for (const name of ['ffmpeg', 'ffprobe']) {

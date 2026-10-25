@@ -14,7 +14,7 @@
     "release:major": "npm version major && git push --follow-tags"
   },
   "keywords": [],
-  "author": "rootscripts",
+  "author": "Abhishek Roy",
   "license": "MIT",
   "description": "Gaane - music player.",
   "devDependencies": {
@@ -29,13 +29,13 @@
     "tone": "^15.1.22"
   },
   "productName": "Gaane",
-  "homepage": "https://github.com/rootscripts/riff",
+  "homepage": "https://github.com/the-abhishekroy/Gaane",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rootscripts/riff.git"
+    "url": "git+https://github.com/the-abhishekroy/Gaane.git"
   },
   "bugs": {
-    "url": "https://github.com/rootscripts/riff/issues"
+    "url": "https://github.com/the-abhishekroy/Gaane/issues"
   },
   "build": {
     "appId": "io.github.rootscripts.gaane",
@@ -109,8 +109,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "rootscripts",
-        "repo": "riff",
+        "owner": "the-abhishekroy",
+        "repo": "Gaane",
         "releaseType": "release"
       }
     ]
