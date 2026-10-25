@@ -300,7 +300,7 @@ function runGUI() {
     mainWindow.on('move', persistWindowState);
     mainWindow.on('maximize', persistWindowState);
     mainWindow.on('unmaximize', persistWindowState);
-    mainWindow.on('enter-full-screen', () => { persistWindowState(); updateEdgeOverlay(); });
+    mainWindow.on('enter-full-screen', () => { persistWindowState(); updateEdgeOverlay(); setTimeout(updateEdgeOverlay, 700); });
     mainWindow.on('leave-full-screen', () => { persistWindowState(); updateEdgeOverlay(); });
     ['minimize', 'restore', 'hide', 'show'].forEach((ev) => mainWindow.on(ev, () => updateEdgeOverlay()));
     mainWindow.on('close', (e) => {
@@ -352,7 +352,7 @@ function runGUI() {
   // so it never shows up over other apps or other desktops.
   function updateEdgeOverlay() {
     const win = mainWindow;
-    const should = edgeWanted && win && !win.isDestroyed() && win.isFullScreen() && win.isFocused() && !win.isMinimized() && win.isVisible();
+    const should = edgeWanted && win && !win.isDestroyed() && win.isFullScreen() && !!BrowserWindow.getFocusedWindow() && !win.isMinimized() && win.isVisible();
     if (!should) {
       if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.hide();
       return;
@@ -389,12 +389,20 @@ function runGUI() {
     return edgeOverlay;
   }
 
-  ipcMain.on('edge-overlay', (e, on) => { edgeWanted = !!on; updateEdgeOverlay(); });
+  let edgeTimer = null;
+  ipcMain.on('edge-overlay', (e, on) => {
+    edgeWanted = !!on;
+    updateEdgeOverlay();
+    // keep reconciling while ambient mode is open, so the light always follows the real focus/fullscreen state
+    clearInterval(edgeTimer);
+    edgeTimer = edgeWanted ? setInterval(updateEdgeOverlay, 600) : null;
+  });
   ipcMain.on('edge-frame', (e, data) => {
     if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.webContents.send('edge-frame', data);
   });
-  app.on('browser-window-focus', (e, w) => { if (w === mainWindow) updateEdgeOverlay(); });
-  app.on('browser-window-blur', (e, w) => { if (w === mainWindow) updateEdgeOverlay(); });
+  // "app is active" = one of Gaane's windows has focus; switching to another app or desktop turns the light off
+  app.on('browser-window-focus', () => updateEdgeOverlay());
+  app.on('browser-window-blur', () => setTimeout(updateEdgeOverlay, 50));
   app.on('before-quit', () => { if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.destroy(); });
 
   // Pinned mini player (Now Playing card): a small always-on-top window that mirrors playback.

@@ -11312,7 +11312,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (e.code === 'KeyP') {
         e.preventDefault();
-        if (typeof toggleMiniWindow === 'function') toggleMiniWindow();
+        if (window.electronAPI && window.electronAPI.openMini) window.electronAPI.openMini();
+        else if (typeof toggleMiniWindow === 'function') toggleMiniWindow();
         return;
       }
     }
@@ -14519,6 +14520,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   let edgeGlowOn = true;
   try { edgeGlowOn = localStorage.getItem('gaane_edge_glow') !== '0'; } catch (_) {}
   let edgeCoverKey = '';
+  let edgePrev = null;
+  let edgePalette = [];
+  let edgeRetries = 0;
+  let edgeLastThumb = '';
   let edgeColorA = '#ff3c82';
   let edgeColorB = '#785aff';
   let edgePulse = 0;
@@ -14533,12 +14538,85 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (_) { return hex; }
   }
 
+  // The colours that are actually in a cover: strongest hue families, a vivid version of each (same hue).
+  const coverPaletteCache = new Map();
+  function extractCoverPalette(src) {
+    return new Promise((resolve) => {
+      if (!src) return resolve([]);
+      if (coverPaletteCache.has(src)) return resolve(coverPaletteCache.get(src));
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      // covers from the local server may already be cached by an <img> without CORS, which would taint the canvas
+      const loadSrc = /^http:\/\/127\.0\.0\.1:/.test(src) ? `${src}${src.includes('?') ? '&' : '?'}cors=1` : src;
+      img.onload = () => {
+        try {
+          const N = 56;
+          const c = document.createElement('canvas');
+          c.width = N; c.height = N;
+          const x = c.getContext('2d');
+          x.drawImage(img, 0, 0, N, N);
+          const d = x.getImageData(0, 0, N, N).data;
+          const BINS = 36;
+          const bins = Array.from({ length: BINS }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
+          let colourful = 0, total = 0, lumSum = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            const r = d[i], g = d[i + 1], b = d[i + 2];
+            const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+            const v = mx / 255, sat = mx ? (mx - mn) / mx : 0;
+            total++; lumSum += (r + g + b) / 765;
+            if (sat < 0.22 || v < 0.22) continue;
+            colourful++;
+            const dd = mx - mn;
+            let h = mx === r ? ((g - b) / dd) % 6 : mx === g ? (b - r) / dd + 2 : (r - g) / dd + 4;
+            h = (h * 60 + 360) % 360;
+            const bi = Math.floor(h / (360 / BINS)) % BINS;
+            const w = sat * v;
+            const bn = bins[bi];
+            bn.w += w; bn.r += r * w; bn.g += g * w; bn.b += b * w;
+          }
+          const picked = [];
+          const order = bins.map((bn, i) => ({ i, w: bn.w + 0.5 * (bins[(i + 1) % BINS].w + bins[(i + BINS - 1) % BINS].w) })).sort((a, b) => b.w - a.w);
+          for (const o of order) {
+            if (picked.length >= 5 || o.w <= 0) break;
+            if (picked.some(p => { const dh = Math.abs(p.i - o.i); return Math.min(dh, BINS - dh) < 3; })) continue;
+            if (picked.length && o.w < order[0].w * 0.12) break;
+            picked.push(o);
+          }
+          const out = picked.map((p) => {
+            let wr = 0, wg = 0, wb = 0, ww = 0;
+            for (let k = -1; k <= 1; k++) {
+              const bn = bins[(p.i + k + BINS) % BINS];
+              wr += bn.r; wg += bn.g; wb += bn.b; ww += bn.w;
+            }
+            const rgb = ww ? { r: wr / ww, g: wg / ww, b: wb / ww } : { r: 255, g: 255, b: 255 };
+            const hsl = rgbToHsl(Math.round(rgb.r), Math.round(rgb.g), Math.round(rgb.b));
+            return hslToHex(hsl.h, Math.max(72, hsl.s), Math.min(64, Math.max(52, hsl.l)));
+          });
+          let palette = out;
+          if (!palette.length) {
+            // grey / black-and-white cover: stay neutral
+            palette = lumSum / total > 0.5 ? ['#ffffff', '#c8c8cc'] : ['#e8e8ec', '#9a9aa2'];
+          } else if (palette.length === 1) {
+            const q = hexToRgb(palette[0]);
+            const h = rgbToHsl(q.r, q.g, q.b);
+            palette = [palette[0], hslToHex(h.h, h.s, Math.min(76, h.l + 14)), hslToHex(h.h, h.s, Math.max(40, h.l - 10))];
+          }
+          coverPaletteCache.set(src, palette);
+          resolve(palette);
+        } catch (_) { resolve([]); }
+      };
+      img.onerror = () => resolve([]);
+      img.src = loadSrc;
+    });
+  }
+
   function syncEdgeGlow() {
     if (!edgeGlowEl) return;
     const track = state.currentTrack;
     edgeGlowEl.classList.toggle('on', ambientOpen && edgeGlowOn && !!track);
     const thumb = (track && (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(track) : track.thumbnail)) || '';
     if (!thumb || thumb === edgeCoverKey) return;
+    if (thumb !== edgeLastThumb) { edgeLastThumb = thumb; edgeRetries = 0; edgePalette = []; }
     edgeCoverKey = thumb;
     analyzeCover(thumb).then((a) => {
       if (edgeCoverKey !== thumb) return;
@@ -14553,16 +14631,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
       edgeColorB = vividEdgeColor(second, 8);
       root.setProperty('--edge-b', edgeColorB);
+      extractCoverPalette(thumb).then((pal) => {
+        if (edgeCoverKey !== thumb) return;
+        if (pal.length) {
+          // the light is painted with the cover's own colours only
+          edgePalette = pal;
+          edgeColorA = pal[0];
+          edgeColorB = pal[1] || pal[0];
+          root.setProperty('--edge-a', edgeColorA);
+          root.setProperty('--edge-b', edgeColorB);
+        } else if (edgeRetries++ < 4) {
+          // cover not readable yet (e.g. still being extracted): try again shortly
+          setTimeout(() => { if (edgeCoverKey === thumb) edgeCoverKey = ''; }, 1500);
+        }
+      });
     });
   }
   setInterval(syncEdgeGlow, 700);
 
   function edgePulseLoop(ts) {
     requestAnimationFrame(edgePulseLoop);
-    if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 33) return;
+    if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 16) return;
     edgeLastFrame = ts;
     try {
-      let bands = new Array(32).fill(0);
+      const bands = new Array(28).fill(0);
       if (state.isPlaying) {
         if (!edgeFreq) {
           const an = audioEngine && audioEngine.getAnalyserNode && audioEngine.getAnalyserNode();
@@ -14570,17 +14662,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           edgeFreq = new Uint8Array(an.frequencyBinCount);
         }
         audioEngine.getFrequencyData(edgeFreq);
-        const n = edgeFreq.length;
-        // log-spaced groups so bass, mids and treble each get their share of the border
-        for (let i = 0; i < 32; i++) {
-          const lo = Math.floor(Math.pow(i / 32, 1.7) * n);
-          const hi = Math.max(lo + 1, Math.floor(Math.pow((i + 1) / 32, 1.7) * n));
-          let sum = 0;
-          for (let k = lo; k < hi && k < n; k++) sum += edgeFreq[k];
-          bands[i] = Math.min(1, Math.pow(sum / ((hi - lo) * 255), 1.1) * 1.9);
+        // same pipeline as the fullscreen visualizer (your sensitivity/smoothing settings, same bar mapping),
+        // so the light and the bars always move together
+        const { smooth, sens } = vizSettings();
+        if (!edgePrev || edgePrev.length !== edgeFreq.length) edgePrev = new Float32Array(edgeFreq.length);
+        for (let i = 0; i < edgeFreq.length; i++) edgePrev[i] = edgePrev[i] * smooth + Math.min(255, edgeFreq[i] * sens) * (1 - smooth);
+        for (let i = 0; i < 28; i++) {
+          const b0 = i * 2, b1 = Math.min(edgePrev.length - 1, b0 + 1);
+          const norm = (((edgePrev[b0] || 0) + (edgePrev[b1] || 0)) * 0.5) / 255;
+          bands[i] = Math.min(1, Math.pow(norm, 1.3));
         }
       }
-      if (window.electronAPI && window.electronAPI.sendEdgeFrame) window.electronAPI.sendEdgeFrame({ bands, a: edgeColorA, b: edgeColorB });
+      if (window.electronAPI && window.electronAPI.sendEdgeFrame) window.electronAPI.sendEdgeFrame({ bands, a: edgeColorA, b: edgeColorB, palette: edgePalette });
     } catch (_) {}
   }
   requestAnimationFrame(edgePulseLoop);
