@@ -2,7 +2,7 @@
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import math, os
 
-W, H = 1320, 740   # drawn at 2x; window is 660x370
+W, H = 1320, 780   # drawn at 2x; window is 660x390
 here = os.path.dirname(os.path.abspath(__file__))
 
 def font(path, size, index=0):
@@ -71,7 +71,7 @@ lw = d.textlength(left, font=f); rw = d.textlength(right, font=f)
 hw = 34
 total = lw + 14 + hw + 14 + rw
 x0 = W / 2 - total / 2
-fy = 556
+fy = 530
 d.text((x0, fy), left, font=f, fill=(255, 255, 255), anchor='lm')
 hx, hy = x0 + lw + 14 + hw / 2, fy
 pts = []
