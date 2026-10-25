@@ -15280,6 +15280,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   refreshYtmStatus();
 
+  // Vertical wheel/trackpad scrolling always moves the page, even when the pointer is over a sideways shelf.
+  (() => {
+    const view = document.getElementById('view-discover');
+    const fy = document.getElementById('home-foryou');
+    if (!view || !fy) return;
+    fy.addEventListener('wheel', (e) => {
+      if (fy.classList.contains('hidden') || e.ctrlKey) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;   // sideways gestures still scroll the shelf
+      if (!e.target.closest('.yt-scroll, .yt-grid, .yt-list, .yt-chips, .story-cards')) return;
+      e.preventDefault();
+      view.scrollTop += e.deltaY;
+    }, { passive: false });
+  })();
+
   async function loadHomePage(isRefresh = false) {
     if (await refreshYtmStatus()) {
       applyHomeMode();
