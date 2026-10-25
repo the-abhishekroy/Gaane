@@ -14,13 +14,14 @@
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
   const BANDS = 32;
-  const SEGMENTS = 140;
+  const LINE = 3;                       // one line width everywhere, notch included
   let cfg = { notch: null };
   let colors = { a: [255, 60, 130], b: [120, 90, 255] };
-  let target = new Float32Array(BANDS);
-  let level = new Float32Array(BANDS);
-  let segs = [];
-  let W = 0, H = 0, dpr = 1;
+  const target = new Float32Array(BANDS);
+  let low = 0, mid = 0, high = 0, energy = 0;
+  let W = 0, H = 0, dpr = 1, path = null;
+  let tmp, tctx, glowA, gaCtx, glowB, gbCtx;
+  let angle = 0;
 
   const hex = (h) => {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(h || '').trim());
@@ -29,70 +30,47 @@
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   };
 
-  // Border path, clockwise from the top-left, rounded like the display and curving around the notch.
+  // One closed path: rounded like the display and curving around the notch.
   function buildPath() {
-    const pts = [];
-    const r = 16;
-    const arc = (cx, cy, rad, a0, a1) => {
-      const n = 10;
-      for (let i = 1; i <= n; i++) {
-        const a = a0 + ((a1 - a0) * i) / n;
-        pts.push([cx + rad * Math.cos(a), cy + rad * Math.sin(a)]);
-      }
-    };
-    const line = (x0, y0, x1, y1) => {
-      const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / 6));
-      for (let i = 1; i <= n; i++) pts.push([x0 + ((x1 - x0) * i) / n, y0 + ((y1 - y0) * i) / n]);
-    };
-    const inset = 2;
+    const p = new Path2D();
+    const inset = LINE / 2 + 0.5;
     const x0 = inset, y0 = inset, x1 = W - inset, y1 = H - inset;
-    pts.push([x0 + r, y0]);
+    const r = 18;
+    p.moveTo(x0 + r, y0);
     if (cfg.notch) {
-      const m = 3, rn = 10;
+      const m = 2 + LINE / 2, rn = 9;
       const cx = W / 2;
       const nl = cx - cfg.notch.w / 2 - m, nr = cx + cfg.notch.w / 2 + m, nb = cfg.notch.h + m;
-      line(x0 + r, y0, nl - rn, y0);
-      arc(nl - rn, y0 + rn, rn, -Math.PI / 2, 0);
-      line(nl, y0 + rn, nl, nb - rn);
-      arc(nl + rn, nb - rn, rn, Math.PI, Math.PI / 2);
-      line(nl + rn, nb, nr - rn, nb);
-      arc(nr - rn, nb - rn, rn, Math.PI / 2, 0);
-      line(nr, nb - rn, nr, y0 + rn);
-      arc(nr + rn, y0 + rn, rn, Math.PI, Math.PI * 1.5);
-      line(nr + rn, y0, x1 - r, y0);
-    } else {
-      line(x0 + r, y0, x1 - r, y0);
+      p.lineTo(nl - rn, y0);
+      p.arc(nl - rn, y0 + rn, rn, -Math.PI / 2, 0);
+      p.lineTo(nl, nb - rn);
+      p.arc(nl + rn, nb - rn, rn, Math.PI, Math.PI / 2, true);
+      p.lineTo(nr - rn, nb);
+      p.arc(nr - rn, nb - rn, rn, Math.PI / 2, 0, true);
+      p.lineTo(nr, y0 + rn);
+      p.arc(nr + rn, y0 + rn, rn, Math.PI, Math.PI * 1.5);
     }
-    arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
-    line(x1, y0 + r, x1, y1 - r);
-    arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
-    line(x1 - r, y1, x0 + r, y1);
-    arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
-    line(x0, y1 - r, x0, y0 + r);
-    arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
-
-    const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    const L = cum[cum.length - 1];
-    segs = [];
-    let j = 0;
-    for (let k = 0; k < SEGMENTS; k++) {
-      const s0 = (k / SEGMENTS) * L, s1 = ((k + 1) / SEGMENTS) * L + 0.75;
-      const poly = [];
-      while (j > 0 && cum[j] > s0) j--;
-      let i = j;
-      while (i < pts.length - 1 && cum[i + 1] < s0) i++;
-      j = i;
-      for (let q = i; q < pts.length && cum[q] <= s1; q++) poly.push(pts[q]);
-      if (poly.length >= 2) segs.push({ poly, s: (k + 0.5) / SEGMENTS });
-    }
+    p.lineTo(x1 - r, y0);
+    p.arc(x1 - r, y0 + r, r, -Math.PI / 2, 0);
+    p.lineTo(x1, y1 - r);
+    p.arc(x1 - r, y1 - r, r, 0, Math.PI / 2);
+    p.lineTo(x0 + r, y1);
+    p.arc(x0 + r, y1 - r, r, Math.PI / 2, Math.PI);
+    p.lineTo(x0, y0 + r);
+    p.arc(x0 + r, y0 + r, r, Math.PI, Math.PI * 1.5);
+    p.closePath();
+    path = p;
   }
 
+  const layer = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
+
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    tmp = layer(W * dpr, H * dpr); tctx = tmp.getContext('2d');
+    glowA = layer(W / 5, H / 5); gaCtx = glowA.getContext('2d');
+    glowB = layer(W / 14, H / 14); gbCtx = glowB.getContext('2d');
     buildPath();
   }
   window.addEventListener('resize', resize);
@@ -106,39 +84,62 @@
     if (Array.isArray(d.bands)) for (let i = 0; i < BANDS; i++) target[i] = d.bands[i] || 0;
   });
 
+  const avg = (arr, from, to) => { let s = 0; for (let i = from; i < to; i++) s += arr[i]; return s / (to - from); };
+  const follow = (cur, t) => cur + (t - cur) * (t > cur ? 0.5 : 0.08);
   const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
-  const rgba = (c, al) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${al})`;
-  let last = 0;
+  const rgb = (c) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
 
+  let last = 0;
   function draw(ts) {
     requestAnimationFrame(draw);
-    if (ts - last < 24) return;
+    const dt = Math.min(0.1, (ts - last) / 1000);
+    if (ts - last < 22) return;
     last = ts;
-    for (let i = 0; i < BANDS; i++) {
-      const t = target[i];
-      level[i] += (t - level[i]) * (t > level[i] ? 0.6 : 0.12);
-    }
-    ctx.clearRect(0, 0, W, H);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    const drift = ts / 14000;
-    const passes = [[8, 0.10], [3.4, 0.22], [1, 1]];
-    for (const [mul, alpha] of passes) {
-      ctx.globalCompositeOperation = mul === 1 ? 'source-over' : 'lighter';
-      ctx.lineCap = mul === 1 ? 'round' : 'butt';
-      for (const sg of segs) {
-        const t = Math.abs((sg.s * 2) % 2 - 1);
-        const v = level[Math.min(BANDS - 1, Math.floor(t * (BANDS - 1)))];
-        const col = mix(colors.a, colors.b, 0.5 + 0.5 * Math.sin((sg.s * 2 + drift) * Math.PI * 2));
-        const base = 3 + v * 7;
-        ctx.lineWidth = base * mul;
-        ctx.strokeStyle = rgba(col, alpha * (0.62 + 0.38 * v));
-        ctx.beginPath();
-        ctx.moveTo(sg.poly[0][0], sg.poly[0][1]);
-        for (let i = 1; i < sg.poly.length; i++) ctx.lineTo(sg.poly[i][0], sg.poly[i][1]);
-        ctx.stroke();
-      }
-    }
+
+    low = follow(low, avg(target, 0, 8));
+    mid = follow(mid, avg(target, 8, 20));
+    high = follow(high, avg(target, 20, 32));
+    energy = follow(energy, low * 0.55 + mid * 0.3 + high * 0.15);
+
+    // the colours flow around the screen faster when the music is busier
+    angle += dt * (0.12 + 0.9 * high + 0.5 * mid);
+
+    const glow = mix(colors.a, [255, 255, 255], 0.18 * energy);
+    const A = mix(colors.a, [255, 255, 255], 0.10 * low);
+    const B = mix(colors.b, [255, 255, 255], 0.10 * mid);
+
+    tctx.clearRect(0, 0, tmp.width, tmp.height);
+    tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const g = tctx.createConicGradient(angle, W / 2, H / 2);
+    g.addColorStop(0, rgb(A));
+    g.addColorStop(0.25, rgb(B));
+    g.addColorStop(0.5, rgb(A));
+    g.addColorStop(0.75, rgb(B));
+    g.addColorStop(1, rgb(A));
+    tctx.strokeStyle = g;
+    tctx.lineWidth = LINE;
+    tctx.lineJoin = 'round';
+    tctx.stroke(path);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 0.8 + 0.2 * energy;
+    ctx.drawImage(tmp, 0, 0);
+
+    // soft bloom: the same line shrunk, blurred and stretched back
+    gaCtx.clearRect(0, 0, glowA.width, glowA.height);
+    gaCtx.filter = 'blur(2.5px)';
+    gaCtx.drawImage(tmp, 0, 0, glowA.width, glowA.height);
+    gbCtx.clearRect(0, 0, glowB.width, glowB.height);
+    gbCtx.filter = 'blur(1.5px)';
+    gbCtx.drawImage(tmp, 0, 0, glowB.width, glowB.height);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 0.75 + 0.25 * energy;
+    ctx.drawImage(glowA, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 0.5 + 0.5 * energy;
+    ctx.drawImage(glowB, 0, 0, canvas.width, canvas.height);
+    ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
   resize();

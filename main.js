@@ -300,8 +300,9 @@ function runGUI() {
     mainWindow.on('move', persistWindowState);
     mainWindow.on('maximize', persistWindowState);
     mainWindow.on('unmaximize', persistWindowState);
-    mainWindow.on('enter-full-screen', persistWindowState);
-    mainWindow.on('leave-full-screen', persistWindowState);
+    mainWindow.on('enter-full-screen', () => { persistWindowState(); updateEdgeOverlay(); });
+    mainWindow.on('leave-full-screen', () => { persistWindowState(); updateEdgeOverlay(); });
+    ['minimize', 'restore', 'hide', 'show'].forEach((ev) => mainWindow.on(ev, () => updateEdgeOverlay()));
     mainWindow.on('close', (e) => {
       persistWindowState();
       if (trayOnClose && tray && !isQuitting) {
@@ -332,10 +333,18 @@ function runGUI() {
     } catch (_) {}
   });
 
-  function showEdgeOverlay() {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    const disp = screen.getDisplayMatching(mainWindow.getBounds());
-    const b = disp.bounds;
+  let edgeWanted = false;
+
+  // The overlay only exists while ambient mode is open AND Gaane's fullscreen window is the active one,
+  // so it never shows up over other apps or other desktops.
+  function updateEdgeOverlay() {
+    const win = mainWindow;
+    const should = edgeWanted && win && !win.isDestroyed() && win.isFullScreen() && win.isFocused() && !win.isMinimized() && win.isVisible();
+    if (!should) {
+      if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.hide();
+      return;
+    }
+    const b = screen.getDisplayMatching(win.getBounds()).bounds;
     if (!edgeOverlay || edgeOverlay.isDestroyed()) {
       edgeOverlay = new BrowserWindow({
         x: b.x, y: b.y, width: b.width, height: b.height,
@@ -358,17 +367,14 @@ function runGUI() {
     }
     edgeOverlay.setBounds(b);
     edgeOverlay.showInactive();
-    logger.log('info', `edge overlay bounds ${JSON.stringify(edgeOverlay.getBounds())} display ${JSON.stringify(b)} notch ${JSON.stringify(edgeNotch)}`);
   }
 
-  function hideEdgeOverlay() {
-    if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.hide();
-  }
-
-  ipcMain.on('edge-overlay', (e, on) => { if (on) showEdgeOverlay(); else hideEdgeOverlay(); });
+  ipcMain.on('edge-overlay', (e, on) => { edgeWanted = !!on; updateEdgeOverlay(); });
   ipcMain.on('edge-frame', (e, data) => {
     if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.webContents.send('edge-frame', data);
   });
+  app.on('browser-window-focus', (e, w) => { if (w === mainWindow) updateEdgeOverlay(); });
+  app.on('browser-window-blur', (e, w) => { if (w === mainWindow) updateEdgeOverlay(); });
   app.on('before-quit', () => { if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.destroy(); });
 
   ipcMain.on('window-minimize', () => {
