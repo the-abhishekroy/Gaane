@@ -6261,7 +6261,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      const isFav = state.favorites.some(f => isSameTrack(f, track));
+      const isFav = state.favorites.some(f => isSameTrack(f, track)) || !!track._ytmLiked;
       const rowThumb = getTrackThumbUrl(track);
       const isAlbum = context === 'album';
       const albumArtist = (track.albumArtist || '').trim().toLowerCase();
@@ -6338,7 +6338,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           let clickIndex = idx;
           let currentList = tracks;
           if (context === 'favorites') {
-            currentList = sortTracksFor('favorites', state.favorites);
+            currentList = sortTracksFor('favorites', getMergedFavorites());
             clickIndex = currentList.findIndex(t => isSameTrack(t, track));
           } else if (context === 'playlist') {
             const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
@@ -6876,15 +6876,35 @@ document.addEventListener('DOMContentLoaded', async () => {
     return { ...track, addedAt: Date.now() };
   }
 
+  // Local favorites plus the songs liked on YouTube Music, as one list.
+  function getMergedFavorites() {
+    if (!ytmLiked || !ytmLiked.length) return state.favorites;
+    const extras = ytmLiked.filter(t => !state.favorites.some(f => isSameTrack(f, t)));
+    return extras.length ? state.favorites.concat(extras) : state.favorites;
+  }
+
+  async function ensureYtmLiked() {
+    if (!ytmState.connected || ytmLiked) return;
+    ytmLiked = [];
+    try {
+      const sections = await loadForYouTab('library', false);
+      const liked = sections.find(s => /liked songs/i.test(s.title));
+      ytmLiked = ((liked && liked.tracks) || []).map(t => ({ ...t, _ytmLiked: true }));
+      if (state.currentView === 'favorites') renderFavoritesView();
+    } catch (e) {}
+  }
+
   function renderFavoritesView() {
+    ensureYtmLiked();
     const query = el.favoritesSearchInput ? normalizeSearch(el.favoritesSearchInput.value) : '';
-    let filtered = state.favorites;
+    const merged = getMergedFavorites();
+    let filtered = merged;
     if (query) {
       filtered = filtered.filter(t => matchesTrackQuery(t, query));
     }
     filtered = sortTracksFor('favorites', filtered);
     if (el.favoritesSort) el.favoritesSort.value = getTrackSortMode('favorites');
-    if (el.favoritesSubtitle) el.favoritesSubtitle.textContent = query ? `${filtered.length} of ${state.favorites.length} tracks` : `${state.favorites.length} tracks saved`;
+    if (el.favoritesSubtitle) el.favoritesSubtitle.textContent = query ? `${filtered.length} of ${merged.length} tracks` : `${merged.length} tracks saved${merged.length > state.favorites.length ? ' (including YouTube Music likes)' : ''}`;
     if (el.favoritesTracksList) renderTracks(el.favoritesTracksList, filtered, 'favorites');
   }
 
@@ -14339,7 +14359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function isDiscoverActive() {
     const view = document.getElementById('view-discover');
-    return !!(view && view.classList.contains('active'));
+    return !!(view && view.classList.contains('active')) && !ytmState.connected;
   }
 
   function isFormInputFocused() {
@@ -14521,6 +14541,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   requestAnimationFrame(edgePulseLoop);
 
+  var ytmLiked = null;
   const ytmState = { connected: false, sections: [], chips: [], loadedAt: 0 };
 
   function updateYtmUi() {
@@ -14533,6 +14554,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const nav = document.getElementById('nav-foryou');
     if (nav) nav.classList.toggle('hidden', !ytmState.connected);
     if (typeof updateNavIndicator === 'function') updateNavIndicator(false);
+    applyHomeMode();
+  }
+
+  // One home page: your YouTube Music home when connected, otherwise My Wave.
+  let homeModeApplied = null;
+  function applyHomeMode() {
+    const hero = document.getElementById('home-hero');
+    const fy = document.getElementById('home-foryou');
+    const on = !!ytmState.connected;
+    if (hero) hero.style.display = on ? 'none' : '';
+    if (fy) fy.classList.toggle('hidden', !on);
+    const ambient = document.getElementById('home-ambient');
+    if (ambient) ambient.style.display = on ? 'none' : '';
+    if (homeModeApplied !== on) {
+      homeModeApplied = on;
+      if (on) renderForYouView(false);
+    }
   }
 
   async function refreshYtmStatus() {
@@ -14576,7 +14614,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ytmState.sections = data.sections || [];
       ytmState.chips = data.chips || [];
       ytmState.loadedAt = Date.now();
-      if (document.getElementById('view-foryou')?.classList.contains('active')) renderForYouView();
+      if (ytmState.connected) renderForYouView();
       return data.wave || [];
     } catch (e) { return []; }
   }
@@ -14799,11 +14837,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const sections = await loadForYouTab('library', false);
     if (state.currentView !== 'favorites') return;
     host.innerHTML = '';
-    const title = document.createElement('h3'); title.className = 'ytm-section-title'; title.textContent = 'From YouTube Music';
+    const title = document.createElement('h3'); title.className = 'ytm-section-title'; title.textContent = 'Your YouTube Music library';
     host.appendChild(title);
-    sections.forEach((sec) => {
-      const isLiked = /liked songs/i.test(sec.title);
-      host.appendChild(buildYtShelf(sec, { layout: isLiked ? 'rows' : 'cards', limit: 300 }));
+    sections.filter(sec => !/liked songs/i.test(sec.title)).forEach((sec) => {
+      host.appendChild(buildYtShelf(sec, { layout: 'cards', limit: 300 }));
     });
     if (!sections.length) host.innerHTML += '<div class="empty-hint">Nothing saved in your YouTube Music library yet.</div>';
   }
@@ -14876,8 +14913,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           forYouTab = 'home';
           Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
           ytmState.sections = [];
-          switchView('foryou');
-          loadHomePage(true);
+          switchView('discover');
+          applyHomeMode();
+          renderForYouView(true);
           return;
         }
         errEl.textContent = data.error || 'Could not connect.';
@@ -14889,6 +14927,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     input.focus();
   }
+
+  async function disconnectYtm(btn) {
+    if (btn) btn.disabled = true;
+    try {
+      await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-logout`, { method: 'POST' });
+      ytmState.connected = false;
+      ytmState.sections = [];
+      ytmLiked = null;
+      Object.keys(forYouCache).forEach(k => delete forYouCache[k]);
+      Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
+      updateYtmUi();
+      showToast('Disconnected from YouTube Music');
+      await loadHomePage(true);
+      if (state.currentView === 'favorites') renderFavoritesView();
+    } catch (e) {
+      showToast('YouTube Music request failed', 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+      refreshYtmStatus();
+    }
+  }
+  document.getElementById('btn-ytm-disconnect')?.addEventListener('click', (e) => disconnectYtm(e.currentTarget));
 
   const btnYtmConnect = document.getElementById('btn-ytm-connect');
   if (btnYtmConnect) {
@@ -14927,6 +14987,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   refreshYtmStatus();
 
   async function loadHomePage(isRefresh = false) {
+    if (await refreshYtmStatus()) {
+      applyHomeMode();
+      if (isRefresh) { Object.keys(forYouCache).forEach(k => delete forYouCache[k]); await renderForYouView(true); }
+      return true;
+    }
     const jumpSection = document.getElementById('section-jump-back');
     if (jumpSection) {
       jumpSection.style.display = 'none';

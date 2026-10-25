@@ -7857,3 +7857,7 @@ body.mini #edge-glow { border-radius: 10px; }
 .ytm-section { margin: 28px 0 8px; }
 .ytm-section-title { font-size: calc(22px * var(--font-scale, 1)); font-weight: 700; margin: 0 0 16px; color: var(--md-sys-color-on-surface); }
 #ytm-favorites .yt-shelf-head h3, #ytm-history .yt-shelf-head h3 { font-size: calc(18px * var(--font-scale, 1)); }
+
+.home-foryou { padding: 4px 4px 24px; }
+.home-foryou.hidden { display: none; }
+.home-foryou .view-header { margin-bottom: 14px; }

@@ -142,15 +142,6 @@
           </div>
         </button>
 
-        <button class="nav-item hidden" data-view="foryou" id="nav-foryou" title="For you (YouTube Music)">
-          <div class="nav-indicator">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"></path>
-              <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path>
-            </svg>
-          </div>
-        </button>
-
         <button class="nav-item" data-view="queue" id="nav-queue" title="Queue">
           <div class="nav-indicator">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -274,6 +265,23 @@
             </div>
             <div class="home-hero-dots" id="home-hero-dots"></div>
           </div>
+
+          <div class="home-foryou hidden" id="home-foryou">
+            <div class="view-header">
+              <div>
+                <h2>Home</h2>
+                <span class="view-subtitle">Picked for you from YouTube Music</span>
+              </div>
+              <button class="btn-outline-pill" id="btn-foryou-refresh">Refresh</button>
+              <button class="btn-outline-pill" id="btn-ytm-disconnect">Disconnect YouTube Music</button>
+            </div>
+            <div class="foryou-tabs" id="foryou-tabs">
+              <button class="foryou-tab active" data-tab="home">Home</button>
+              <button class="foryou-tab" data-tab="explore">Explore</button>
+            </div>
+            <div class="yt-chips" id="foryou-chips"></div>
+            <div id="foryou-shelves"></div>
+          </div>
         </div>
 
         <div class="search-results-container hidden" id="search-results-container">
@@ -345,24 +353,6 @@
         <div class="ytm-section hidden" id="ytm-history"></div>
         <div class="tracks-list" id="history-tracks-list">
           <div class="empty-hint">No recently played tracks.</div>
-        </div>
-      </section>
-
-      <section class="content-view" id="view-foryou">
-        <div class="view-header">
-          <div>
-            <h2>For you</h2>
-            <span class="view-subtitle">From your YouTube Music account</span>
-          </div>
-          <button class="btn-outline-pill" id="btn-foryou-refresh">Refresh</button>
-        </div>
-        <div class="foryou-tabs" id="foryou-tabs">
-          <button class="foryou-tab active" data-tab="home">Home</button>
-          <button class="foryou-tab" data-tab="explore">Explore</button>
-        </div>
-        <div class="yt-chips" id="foryou-chips"></div>
-        <div id="foryou-shelves">
-          <div class="empty-hint">Connect YouTube Music from My Wave to see your recommendations.</div>
         </div>
       </section>
 
