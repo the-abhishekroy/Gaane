@@ -7798,11 +7798,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     requestAnimationFrame(() => {
       document.querySelectorAll('.no-enter-anim').forEach(c => c.classList.remove('no-enter-anim'));
-      [el.viewDiscover, el.viewFavorites, el.viewLocal, el.viewHistory, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings, document.getElementById('view-foryou')].forEach(v => {
+      [el.viewDiscover, el.viewFavorites, el.viewLocal, el.viewHistory, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings, document.getElementById('view-foryou'), document.getElementById('view-stats')].forEach(v => {
         if (v) v.classList.remove('active');
       });
 
-        [el.navDiscover, el.navFavorites, el.navLocal, el.navHistory, el.navQueue, el.navSettings, document.getElementById('nav-foryou')].forEach(n => {
+        [el.navDiscover, el.navFavorites, el.navLocal, el.navHistory, el.navQueue, el.navSettings, document.getElementById('nav-foryou'), document.getElementById('nav-stats')].forEach(n => {
           if (n) n.classList.remove('active');
         });
 
@@ -7829,6 +7829,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fyNav = document.getElementById('nav-foryou');
             if (fyNav) fyNav.classList.add('active');
             if (typeof renderForYouView === 'function') renderForYouView();
+          } else if (viewName === 'stats') {
+            document.getElementById('view-stats')?.classList.add('active');
+            document.getElementById('nav-stats')?.classList.add('active');
+            if (typeof renderStatsView === 'function') renderStatsView();
           } else if (viewName === 'queue') {
             if (el.viewQueue) el.viewQueue.classList.add('active');
             if (el.navQueue) el.navQueue.classList.add('active');
@@ -8110,6 +8114,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (el.navFavorites) el.navFavorites.addEventListener('click', () => switchView('favorites'));
   if (el.navLocal) el.navLocal.addEventListener('click', () => switchView('local'));
   if (el.navHistory) el.navHistory.addEventListener('click', () => switchView('history'));
+  const navStatsBtn = document.getElementById('nav-stats');
+  if (navStatsBtn) navStatsBtn.addEventListener('click', () => switchView('stats'));
   const navForYouBtn = document.getElementById('nav-foryou');
   if (navForYouBtn) navForYouBtn.addEventListener('click', () => switchView('foryou'));
   if (el.navQueue) el.navQueue.addEventListener('click', () => switchView('queue'));
@@ -14466,6 +14472,158 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(syncTvkControls, 400);
   })();
 
+  // Listening stats: sample playback once a second and send small batches to the local stats store.
+  (() => {
+    if (!window.GaaneListening) return;
+    const post = (batch) => {
+      const events = batch.map((e) => ({ track: e.track, ms: e.ms, plays: e.plays, ts: e.ts }));
+      fetch(`http://127.0.0.1:${state.serverPort}/api/stats/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }), keepalive: true }).catch(() => {});
+    };
+    const rec = window.GaaneListening.createRecorder(post);
+    const slim = (t) => {
+      const thumb = t.thumbnail || '';
+      return { id: String(t.id || t.url || ''), title: t.title || '', artist: t.artist || '', album: t.album || '', thumbnail: /^http:\/\/127\.0\.0\.1:/.test(thumb) ? '' : thumb, duration: t.duration || 0, url: /^http:\/\/127\.0\.0\.1:/.test(t.url || '') ? '' : (t.url || ''), platform: t.platform || '' };
+    };
+    setInterval(() => {
+      const a = document.getElementById('native-audio');
+      const t = state.currentTrack;
+      if (state.isPlaying && t && a && !a.paused && !a.ended && a.readyState > 2) rec.tick(slim(t), (a.duration || 0) * 1000);
+      else rec.stop();
+    }, 1000);
+    setInterval(() => rec.flush(), 30000);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) rec.flush(); });
+    window.addEventListener('beforeunload', () => rec.flush());
+    window.__gaaneStatsFlush = () => rec.flush();
+  })();
+
+  // --- Your listening (stats page) -----------------------------------------------------------
+  let statsPeriod = 'month';
+  let statsRenderId = 0;
+
+  function fmtListening(ms) {
+    const mins = Math.round(ms / 60000);
+    if (mins < 1) return ms >= 1000 ? `${Math.round(ms / 1000)} sec` : '0 min';
+    if (mins < 60) return `${mins} min`;
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return m ? `${h} h ${m} min` : `${h} h`;
+  }
+
+  function fmtHour(h) { const x = h % 12 || 12; return `${x} ${h < 12 ? 'AM' : 'PM'}`; }
+
+  async function renderStatsView() {
+    const body = document.getElementById('stats-body');
+    if (!body) return;
+    const mine = ++statsRenderId;
+    document.querySelectorAll('#stats-tabs .foryou-tab').forEach((b) => b.classList.toggle('active', b.dataset.period === statsPeriod));
+    if (typeof window.__gaaneStatsFlush === 'function') window.__gaaneStatsFlush();
+    await new Promise((r) => setTimeout(r, 120));
+    let sum = null;
+    try {
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/stats/summary?period=${statsPeriod}`);
+      sum = (await res.json()).summary;
+    } catch (e) { /* shown below */ }
+    if (state.currentView !== 'stats' || mine !== statsRenderId) return;
+    body.innerHTML = '';
+    if (!sum || !sum.totalMs) {
+      body.innerHTML = '<div class="empty-hint">Play something and your listening time, top songs, artists and albums will show up here.</div>';
+      return;
+    }
+    const sub = document.getElementById('stats-subtitle');
+    if (sub) sub.textContent = sum.since ? `Counting since ${new Date(sum.since + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Time, songs, artists and albums';
+
+    // "Your listening experience" story cards: minutes, top artist, top song, top album
+    {
+      const top = (arr) => (arr && arr[0]) || null;
+      const ta = top(sum.artists), ts = top(sum.songs), tb = top(sum.albums);
+      const since = sum.since ? new Date(sum.since + 'T12:00:00').toLocaleDateString(undefined, { month: '2-digit', year: '2-digit' }).replace('/', ' / ') : '';
+      const mins = Math.round(sum.totalMs / 60000);
+      const story = [
+        { big: mins.toLocaleString(), label: 'Minutes listened', foot: 'Listener', sub: `${sum.totalPlays} play${sum.totalPlays === 1 ? '' : 's'} · ${statsPeriod === 'all' ? 'All time' : statsPeriod === 'week' ? 'This week' : statsPeriod === 'month' ? 'This month' : 'This year'}`, art: ts && ts.thumbnail },
+        { big: ta ? ta.name : '-', label: 'Top artist', foot: 'Listener', sub: ta ? `${fmtListening(ta.ms)} · ${ta.plays} play${ta.plays === 1 ? '' : 's'}` : '', art: ta && ta.thumbnail },
+        { big: ts ? ts.title : '-', label: 'Top song', foot: 'Listener', sub: ts ? `${ts.artist} · ${ts.plays} play${ts.plays === 1 ? '' : 's'}` : '', art: ts && ts.thumbnail },
+        { big: tb ? tb.name : 'No album yet', label: 'Top album', foot: 'Listener', sub: tb ? `${tb.artist ? tb.artist + ' · ' : ''}${fmtListening(tb.ms)}` : fmtListening(0), art: tb && tb.thumbnail }
+      ];
+      const row = document.createElement('div');
+      row.className = 'story-cards';
+      story.forEach((c) => {
+        const el2 = document.createElement('div');
+        el2.className = 'story-card';
+        if (c.art) el2.style.setProperty('--story-art', `url("${String(c.art).replace(/"/g, '%22')}")`);
+        el2.innerHTML = `<span class="story-top"><span class="story-kicker">YOUR LISTENING EXPERIENCE</span><svg width="26" height="22" viewBox="0 0 26 22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 4h20"/><path d="M5 9h16"/><path d="M8 14h10"/><path d="M11 19h4"/></svg></span><span class="story-main"><span class="story-big"></span><span class="story-label"></span></span><span class="story-foot"><span><span class="story-foot-title"></span><span class="story-foot-sub"></span></span><span class="story-since"><small>MEMBER SINCE</small><b></b></span></span>`;
+        el2.querySelector('.story-big').textContent = c.big;
+        el2.querySelector('.story-label').textContent = c.label;
+        el2.querySelector('.story-foot-title').textContent = c.foot;
+        el2.querySelector('.story-foot-sub').textContent = c.sub;
+        el2.querySelector('.story-since b').textContent = since || '-';
+        row.appendChild(el2);
+      });
+      body.appendChild(row);
+    }
+
+    const card = (label, value, note) => `<div class="stat-card"><span class="stat-value">${escapeHtml(String(value))}</span><span class="stat-label">${escapeHtml(label)}</span>${note ? `<span class="stat-note">${escapeHtml(note)}</span>` : ''}</div>`;
+    const busiest = sum.busiestDay ? new Date(sum.busiestDay.date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '-';
+    const cards = document.createElement('div');
+    cards.className = 'stat-cards';
+    cards.innerHTML =
+      card('Listening time', fmtListening(sum.totalMs), `${sum.activeDays} active day${sum.activeDays === 1 ? '' : 's'}`) +
+      card('Plays', sum.totalPlays, 'a play is half a song') +
+      card('Songs', sum.distinctSongs) + card('Artists', sum.distinctArtists) + card('Albums', sum.distinctAlbums) +
+      card('Day streak', sum.streakDays, sum.streakDays ? 'days in a row' : 'play something today') +
+      card('Peak hour', sum.peakHour === null ? '-' : fmtHour(sum.peakHour)) +
+      card('Busiest day', busiest, sum.busiestDay ? fmtListening(sum.busiestDay.ms) : '');
+    body.appendChild(cards);
+
+    const section = (title) => { const w = document.createElement('section'); w.className = 'yt-shelf'; w.innerHTML = `<div class="yt-shelf-head"><h3>${escapeHtml(title)}</h3></div>`; body.appendChild(w); return w; };
+
+    const songsSec = section('Top songs');
+    const list = document.createElement('div'); list.className = 'stats-songs';
+    sum.songs.slice(0, 15).forEach((t, i) => {
+      const row = document.createElement('button'); row.className = 'stats-song';
+      row.innerHTML = `<span class="stats-rank">${i + 1}</span><img alt="" loading="lazy"><span class="stats-song-text"><span class="yt-card-title"></span><span class="yt-card-sub"></span></span><span class="stats-song-meta"></span>`;
+      const img = row.querySelector('img'); if (t.thumbnail) img.src = t.thumbnail; else img.style.visibility = 'hidden';
+      row.querySelector('.yt-card-title').textContent = t.title || 'Untitled';
+      row.querySelector('.yt-card-sub').textContent = t.artist || '';
+      row.querySelector('.stats-song-meta').textContent = `${fmtListening(t.ms)} · ${t.plays} play${t.plays === 1 ? '' : 's'}`;
+      row.addEventListener('click', () => playTrack({ id: t.id, title: t.title, artist: t.artist, album: t.album, thumbnail: t.thumbnail, duration: t.duration, url: t.url || `https://www.youtube.com/watch?v=${t.id}`, platform: t.platform || 'youtube' }, sum.songs.map((x) => ({ id: x.id, title: x.title, artist: x.artist, album: x.album, thumbnail: x.thumbnail, duration: x.duration, url: x.url || `https://www.youtube.com/watch?v=${x.id}`, platform: x.platform || 'youtube' })), i));
+      list.appendChild(row);
+    });
+    songsSec.appendChild(list);
+
+    const mkRow = (items, round, subFn) => {
+      const row = document.createElement('div'); row.className = 'yt-scroll';
+      items.forEach((it, i) => {
+        const c = document.createElement('div'); c.className = 'yt-card stats-card';
+        c.innerHTML = `<span class="yt-card-img"><img alt="" loading="lazy"></span><span class="yt-card-title"></span><span class="yt-card-sub"></span>`;
+        const img = c.querySelector('img'); if (round) img.classList.add('round'); if (it.thumbnail) img.src = it.thumbnail;
+        c.querySelector('.yt-card-title').textContent = `${i + 1}. ${it.name}`;
+        c.querySelector('.yt-card-sub').textContent = subFn(it);
+        row.appendChild(c);
+      });
+      return row;
+    };
+    if (sum.artists.length) section('Top artists').appendChild(mkRow(sum.artists, true, (a) => `${fmtListening(a.ms)} · ${a.plays} plays`));
+    if (sum.albums.length) section('Top albums').appendChild(mkRow(sum.albums, false, (a) => `${a.artist ? a.artist + ' · ' : ''}${fmtListening(a.ms)}`));
+    else { const n = document.createElement('div'); n.className = 'empty-hint'; n.textContent = 'Albums show up here when the songs you play carry album info (your YouTube Music library does).'; body.appendChild(n); }
+
+    const hoursSec = section('When you listen');
+    const max = Math.max(...sum.hourOfDay, 1);
+    const chart = document.createElement('div'); chart.className = 'stats-hours';
+    sum.hourOfDay.forEach((v, h) => {
+      const col = document.createElement('div'); col.className = 'stats-hour' + (h === sum.peakHour ? ' peak' : '');
+      col.title = `${fmtHour(h)}: ${fmtListening(v)}`;
+      col.innerHTML = `<span class="stats-hour-bar" style="height:${Math.max(3, Math.round((v / max) * 100))}%"></span><span class="stats-hour-label">${h % 6 === 0 ? fmtHour(h) : ''}</span>`;
+      chart.appendChild(col);
+    });
+    hoursSec.appendChild(chart);
+  }
+
+  document.querySelectorAll('#stats-tabs .foryou-tab').forEach((b) => b.addEventListener('click', () => { statsPeriod = b.dataset.period; renderStatsView(); }));
+  document.getElementById('btn-stats-reset')?.addEventListener('click', async () => {
+    if (!confirm('Delete all your listening stats? This cannot be undone.')) return;
+    try { await fetch(`http://127.0.0.1:${state.serverPort}/api/stats/reset`, { method: 'POST' }); } catch (e) {}
+    renderStatsView();
+  });
+
   // Mini player (pinned Now Playing card): mirror playback to it and run its commands.
   (() => {
     const api = window.electronAPI;
@@ -14845,7 +15003,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const card = document.createElement('button');
     card.className = 'yt-card' + (wide ? ' wide' : '');
     const img = document.createElement('img');
-    img.loading = 'lazy'; img.alt = ''; img.src = t.thumbnail || '';
+    img.loading = 'lazy'; img.decoding = 'async'; img.alt = ''; img.src = t.thumbnail || '';
     if (it.kind === 'artist') img.classList.add('round');
     const title = document.createElement('span'); title.className = 'yt-card-title'; title.textContent = t.title;
     const sub = document.createElement('span'); sub.className = 'yt-card-sub'; sub.textContent = it.kind === 'track' ? t.artist : (it.subtitle || '');

@@ -7774,7 +7774,6 @@ body.mini #edge-glow { border-radius: 10px; }
 
 
 /* Ambient fullscreen: dim the blurred backdrop so the edge light stands out, and glow behind the cover */
-.tv-karaoke .tv-bg { opacity: 0.2; }
 .tv-karaoke .tv-cover { box-shadow: 0 0 70px 6px color-mix(in srgb, var(--edge-a) 55%, transparent), 0 0 0 1px rgba(255,255,255,0.06); }
 
 .tvk-progress { display: flex; align-items: center; gap: 12px; width: min(420px, 100%); margin-top: 14px; font-size: 12px; color: rgba(255,255,255,0.6); }
@@ -7864,3 +7863,64 @@ body.mini #edge-glow { border-radius: 10px; }
 
 /* The edge light is drawn by a separate overlay window over the whole display */
 #edge-glow { display: none !important; }
+
+/* Ambient fullscreen backdrop: a compact, soft blur of the cover behind the player, fading to black well before
+   the screen edges so the edge light stays the star */
+.tv-karaoke .tv-bg { inset: 12% 18%; opacity: 0.55; filter: blur(60px) saturate(1.3); transform: none;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 0%, rgba(0,0,0,0.7) 40%, transparent 72%);
+  mask-image: radial-gradient(ellipse at center, #000 0%, rgba(0,0,0,0.7) 40%, transparent 72%); }
+.tv-karaoke .tv-bg::after { background: none; }
+.tv-karaoke .tv-bg-layer.fallback { filter: none; }
+
+/* ---- Your listening ---- */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 30px; }
+.stat-card { display: flex; flex-direction: column; gap: 2px; padding: 16px 18px; border-radius: 18px; background: var(--md-sys-color-surface-container-high); min-width: 0; }
+.stat-value { font-size: calc(26px * var(--font-scale, 1)); font-weight: 700; letter-spacing: -0.01em; color: var(--md-sys-color-on-surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stat-label { font-size: calc(13px * var(--font-scale, 1)); color: var(--md-sys-color-on-surface-variant); }
+.stat-note { font-size: calc(11.5px * var(--font-scale, 1)); color: var(--md-sys-color-outline); }
+.stats-songs { display: flex; flex-direction: column; }
+.stats-song { display: flex; align-items: center; gap: 14px; padding: 6px 10px 6px 4px; border: none; border-radius: 12px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.stats-song:hover { background: var(--md-sys-color-surface-container-high); }
+.stats-rank { width: 28px; text-align: center; font-weight: 700; color: var(--md-sys-color-on-surface-variant); }
+.stats-song img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--md-sys-color-surface-container-highest); flex: 0 0 48px; }
+.stats-song-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.stats-song-meta { font-size: calc(12.5px * var(--font-scale, 1)); color: var(--md-sys-color-on-surface-variant); white-space: nowrap; }
+.stats-card { cursor: default; }
+.stats-hours { display: flex; align-items: flex-end; gap: 6px; height: 150px; padding: 8px 4px 26px; }
+.stats-hour { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.stats-hour-bar { width: 100%; max-width: 22px; border-radius: 6px 6px 3px 3px; background: var(--md-sys-color-surface-container-highest); }
+.stats-hour.peak .stats-hour-bar { background: var(--md-sys-color-primary); }
+.stats-hour-label { position: absolute; bottom: -22px; font-size: 11px; color: var(--md-sys-color-outline); white-space: nowrap; }
+
+/* Smooth scrolling: keep off-screen shelves and rows from costing layout/paint */
+.yt-shelf, .stats-songs, .stat-cards { contain: layout paint style; }
+.yt-shelf { content-visibility: auto; contain-intrinsic-size: auto 340px; }
+.track-row, .yt-row-item, .stats-song, .yt-card { contain: layout style; }
+.yt-scroll, .yt-list, .yt-grid, .main-content { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.yt-card-img img, .yt-row-item img, .stats-song img { will-change: auto; transform: translateZ(0); }
+
+/* The YouTube Music home is a long page: let it scroll (the My Wave carousel view is the only fixed-height one) */
+#view-discover:has(#home-foryou:not(.hidden)) { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
+#view-discover:has(#home-foryou:not(.hidden)) .discover-content { height: auto; min-height: 100%; }
+
+/* No number badges on the sidebar icons */
+.nav-badge { display: none !important; }
+
+/* ---- Story cards on Your listening ---- */
+.story-cards { display: flex; gap: 14px; overflow-x: auto; padding: 2px 2px 8px; margin: 0 0 22px; scrollbar-width: none; scroll-snap-type: x proximity; }
+.story-cards::-webkit-scrollbar { display: none; }
+.story-card { position: relative; flex: 0 0 min(340px, 78%); height: 214px; border-radius: 22px; padding: 18px 20px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; color: #fff; scroll-snap-align: start; background: #1c1c20; isolation: isolate; box-shadow: 0 10px 30px rgba(0,0,0,0.28); }
+.story-card::before { content: ''; position: absolute; inset: -30px; z-index: -2; background: var(--story-art, none) center / cover no-repeat; filter: blur(34px) saturate(1.5); opacity: 0.7; transform: scale(1.2); }
+.story-card::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(160deg, rgba(0,0,0,0.12), rgba(0,0,0,0.58)); }
+.story-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.story-kicker { font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.14em; opacity: 0.85; }
+.story-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.story-big { font-size: clamp(26px, 2.6vw, 34px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.08; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.story-label { font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.75; }
+.story-foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+.story-foot > span:first-child { display: flex; flex-direction: column; min-width: 0; }
+.story-foot-title { font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.16em; text-transform: uppercase; }
+.story-foot-sub { font-size: 12px; opacity: 0.72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.story-since { display: flex; flex-direction: column; align-items: flex-end; flex: 0 0 auto; }
+.story-since small { font: 600 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; opacity: 0.7; }
+.story-since b { font: 800 15px/1.2 ui-monospace, monospace; letter-spacing: 0.08em; }

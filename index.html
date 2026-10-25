@@ -142,6 +142,16 @@
           </div>
         </button>
 
+        <button class="nav-item" data-view="stats" id="nav-stats" title="Your listening">
+          <div class="nav-indicator">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="6" y1="20" x2="6" y2="11"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="18" y1="20" x2="18" y2="14"></line>
+            </svg>
+          </div>
+        </button>
+
         <button class="nav-item" data-view="queue" id="nav-queue" title="Queue">
           <div class="nav-indicator">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -354,6 +364,23 @@
         <div class="tracks-list" id="history-tracks-list">
           <div class="empty-hint">No recently played tracks.</div>
         </div>
+      </section>
+
+      <section class="content-view" id="view-stats">
+        <div class="view-header">
+          <div>
+            <h2>Your listening</h2>
+            <span class="view-subtitle" id="stats-subtitle">Time, songs, artists and albums</span>
+          </div>
+          <button class="btn-outline-pill" id="btn-stats-reset">Reset stats</button>
+        </div>
+        <div class="foryou-tabs" id="stats-tabs">
+          <button class="foryou-tab" data-period="week">This week</button>
+          <button class="foryou-tab active" data-period="month">This month</button>
+          <button class="foryou-tab" data-period="year">This year</button>
+          <button class="foryou-tab" data-period="all">All time</button>
+        </div>
+        <div id="stats-body"></div>
       </section>
 
       <section class="content-view" id="view-queue">
@@ -2941,6 +2968,7 @@
   <script src="track-sort.js"></script>
   <script src="search-text.js"></script>
   <script src="library-tools.js"></script>
+  <script src="listening-recorder.js"></script>
   <div id="edge-glow" aria-hidden="true"></div>
   <script src="app.js"></script>
 </body>

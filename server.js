@@ -13,6 +13,9 @@ const PORT = 38472;
 const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand, resolveDownloadDir, resolveBinary } = require('./platform');
 const logger = require('./logger');
 const ytmusic = require('./ytmusic');
+const { createStats } = require('./stats');
+const listeningStats = createStats(path.join(DATA_DIR, 'stats'));
+process.on('exit', () => { try { listeningStats.flush(); } catch (e) {} });
 const { getSystemAudioOutputInfo } = require('./audio-output');
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -2855,6 +2858,9 @@ const TOKEN_PROTECTED_ROUTES = new Set([
   '/api/translate',
   '/api/vibe',
   ...ytmusic.ROUTES,
+  '/api/stats/record',
+  '/api/stats/summary',
+  '/api/stats/reset',
   '/api/search',
   '/api/artist',
   '/api/lyrics',
@@ -4717,6 +4723,29 @@ const server = http.createServer(async (req, res) => {
     const platform = parsedUrl.query.platform || 'youtube';
     const limit = parseInt(parsedUrl.query.limit || '20', 10);
     return handleSearch(req, res, q, platform, limit);
+  }
+
+  if (parsedUrl.pathname === '/api/stats/summary') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true, summary: listeningStats.summary(String(parsedUrl.query.period || 'month')) }));
+  }
+
+  if (parsedUrl.pathname === '/api/stats/reset' && req.method === 'POST') {
+    listeningStats.reset();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true }));
+  }
+
+  if (parsedUrl.pathname === '/api/stats/record' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { if (res.writableEnded) return; body += chunk; if (body.length > MAX_BODY_BYTES) { body = ''; req.removeAllListeners('data'); req.removeAllListeners('end'); res.writeHead(413, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: false, error: 'payload too large' })); req.resume(); } });
+    req.on('end', () => {
+      const payload = safeJsonParse(body, {});
+      const accepted = listeningStats.record(payload.events);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, accepted }));
+    });
+    return;
   }
 
   if (ytmusic.ROUTES.has(parsedUrl.pathname)) {

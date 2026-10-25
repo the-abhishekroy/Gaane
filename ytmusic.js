@@ -123,14 +123,16 @@ function bestThumb(thumbs, videoId) {
   return url.replace(/=w\d+-h\d+[^&]*$/, '=w544-h544');
 }
 
+const looksLikeAlbum = (t) => !!t && !/^\d{4}$/.test(t) && !/\b(plays?|views?|subscribers?|crore|lakh|[KMB]\b)/i.test(t) && !/^\d+(:\d{2}){1,2}$/.test(t);
+
 function parseDuration(text) {
   if (!text || !/^\d+(:\d{1,2}){1,2}$/.test(text.trim())) return 0;
   return text.trim().split(':').map(Number).reduce((a, n) => a * 60 + n, 0);
 }
 
-function makeTrack(id, title, artist, duration, thumbnail) {
+function makeTrack(id, title, artist, duration, thumbnail, album) {
   return {
-    id, title, artist: artist || 'Unknown Artist', duration: duration || 180,
+    id, title, artist: artist || 'Unknown Artist', duration: duration || 180, album: album || '',
     thumbnail: thumbnail || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
     url: `https://www.youtube.com/watch?v=${id}`, platform: 'youtube'
   };
@@ -161,7 +163,8 @@ function parseListItem(r) {
   const duration = parseDuration(runsText(fixed)) || parseDuration(segs[segs.length - 1]);
   const thumbs = r.thumbnail && r.thumbnail.musicThumbnailRenderer && r.thumbnail.musicThumbnailRenderer.thumbnail && r.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails;
   if (!title) return null;
-  return makeTrack(videoId, title, artist.replace(/\s*-\s*Topic$/i, '').trim(), duration, bestThumb(thumbs, videoId));
+  const albumGuess = runsText(cols[2] && cols[2].musicResponsiveListItemFlexColumnRenderer && cols[2].musicResponsiveListItemFlexColumnRenderer.text).trim() || (segs.length > 2 ? segs[1] : '');
+  return makeTrack(videoId, title, artist.replace(/\s*-\s*Topic$/i, '').trim(), duration, bestThumb(thumbs, videoId), looksLikeAlbum(albumGuess) ? albumGuess : '');
 }
 
 function parseTwoRowItemInner(r) {
@@ -293,7 +296,7 @@ function parsePanelTracks(json) {
     const r = wrap.playlistPanelVideoRenderer || (wrap.playlistPanelVideoWrapperRenderer && wrap.playlistPanelVideoWrapperRenderer.primaryRenderer && wrap.playlistPanelVideoWrapperRenderer.primaryRenderer.playlistPanelVideoRenderer);
     if (!r || !r.videoId) continue;
     const segs = splitBylineRuns(r.longBylineText && r.longBylineText.runs);
-    out.push(makeTrack(r.videoId, runsText(r.title), (segs[0] || '').replace(/\s*-\s*Topic$/i, ''), parseDuration(runsText(r.lengthText)), bestThumb(r.thumbnail && r.thumbnail.thumbnails, r.videoId)));
+    out.push(makeTrack(r.videoId, runsText(r.title), (segs[0] || '').replace(/\s*-\s*Topic$/i, ''), parseDuration(runsText(r.lengthText)), bestThumb(r.thumbnail && r.thumbnail.thumbnails, r.videoId), looksLikeAlbum(segs[1]) ? segs[1] : ''));
   }
   return out;
 }
