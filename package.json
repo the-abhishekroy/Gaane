@@ -15,7 +15,10 @@
     "dist:dmg": "electron-builder --mac dmg --arm64 --publish never && rm -rf dist/mac-arm64 dist/builder-debug.yml dist/latest-mac.yml"
   },
   "keywords": [],
-  "author": "Abhishek Roy",
+  "author": {
+    "name": "Abhishek Roy",
+    "url": "https://www.abhishekkroy.me"
+  },
   "license": "MIT",
   "description": "Gaane - music player.",
   "devDependencies": {

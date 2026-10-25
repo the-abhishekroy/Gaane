@@ -2,7 +2,7 @@
 
 A desktop music player for macOS, Windows and Linux, built with Electron.
 
-Made by [Abhishek Roy](https://github.com/the-abhishekroy).
+Made by [Abhishek Roy](https://www.abhishekkroy.me).
 
 ## Features
 
