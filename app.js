@@ -14465,6 +14465,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(syncTvkControls, 400);
   })();
 
+  // Mini player (pinned Now Playing card): mirror playback to it and run its commands.
+  (() => {
+    const api = window.electronAPI;
+    if (!api || !api.openMini) return;
+    document.getElementById('btn-mini-card')?.addEventListener('click', () => api.openMini());
+    let lastCover = '';
+    setInterval(() => {
+      const t = state.currentTrack;
+      const aud = document.getElementById('native-audio');
+      const cover = (t && (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(t) : t.thumbnail)) || '';
+      api.sendMiniState({
+        title: (t && t.title) || '',
+        artist: (t && t.artist) || '',
+        cover,
+        playing: !!state.isPlaying,
+        pos: aud ? aud.currentTime || 0 : 0,
+        dur: aud && isFinite(aud.duration) ? aud.duration : 0
+      });
+      lastCover = cover;
+    }, 400);
+    api.onMiniCommand((d) => {
+      if (!d) return;
+      if (d.cmd === 'toggle') document.getElementById('btn-play-pause')?.click();
+      else if (d.cmd === 'prev') document.getElementById('btn-prev')?.click();
+      else if (d.cmd === 'next') document.getElementById('btn-next')?.click();
+      else if (d.cmd === 'seek') {
+        const aud = document.getElementById('native-audio');
+        if (aud && aud.duration && isFinite(aud.duration)) aud.currentTime = Math.max(0, Math.min(1, d.value)) * aud.duration;
+      } else if (d.cmd === 'ambient') document.getElementById('btn-ambient-mode')?.click();
+    });
+  })();
+
   // Ambient fullscreen = the fullscreen lyrics view (lyrics, visualizer, controls) plus the edge light.
   let ambientOpen = false;
   const openAmbientFullscreen = () => document.getElementById('btn-tv-karaoke')?.click();

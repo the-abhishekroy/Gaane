@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --accent: #3b82f6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
+  .card { position: absolute; inset: 6px; border-radius: 24px; overflow: hidden; background: rgba(36, 36, 40, 0.94); color: #fff; display: flex; gap: 12px; padding: 12px; -webkit-app-region: drag; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.14) inset; }
+  .tint { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(34px) saturate(1.6); opacity: 0.38; transform: scale(1.2); }
+  .scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,20,24,0.15), rgba(20,20,24,0.45)); }
+  .art { position: relative; width: 114px; height: 114px; flex: 0 0 114px; border-radius: 14px; object-fit: cover; background: #2a2a2e; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+  .col { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 2px 0 0; }
+  .head { display: flex; align-items: flex-start; gap: 8px; }
+  .meta { flex: 1; min-width: 0; }
+  .title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artist { margin-top: 1px; font-size: 13px; color: rgba(255,255,255,0.62); white-space: nowrap; overflow: hidden; }
+  .artist span { display: inline-block; padding-right: 36px; }
+  .artist.scroll span { animation: marquee 12s linear infinite; }
+  @keyframes marquee { 0%, 12% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+  .glyph { margin-top: 3px; width: 18px; height: 14px; display: flex; align-items: center; gap: 2px; opacity: 0.7; }
+  .glyph i { display: block; width: 2px; border-radius: 2px; background: #fff; animation: eq 1s ease-in-out infinite; }
+  .glyph i:nth-child(1) { height: 5px; animation-delay: 0s; } .glyph i:nth-child(2) { height: 10px; animation-delay: .15s; } .glyph i:nth-child(3) { height: 7px; animation-delay: .3s; } .glyph i:nth-child(4) { height: 12px; animation-delay: .45s; } .glyph i:nth-child(5) { height: 6px; animation-delay: .6s; }
+  body.paused .glyph i { animation: none; }
+  @keyframes eq { 50% { transform: scaleY(0.45); } }
+  .tools { display: none; gap: 4px; }
+  .card:hover .glyph { display: none; }
+  .card:hover .tools { display: flex; }
+  button { -webkit-app-region: no-drag; border: none; background: transparent; color: #fff; cursor: pointer; padding: 0; font: inherit; }
+  .tool { width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; }
+  .tool:hover { background: rgba(255,255,255,0.28); }
+  .transport { display: flex; align-items: center; justify-content: center; gap: 30px; margin-top: 4px; }
+  .transport button { width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; transition: transform 120ms ease, opacity 120ms ease; opacity: 0.95; }
+  .transport button:hover { opacity: 1; transform: scale(1.08); }
+  .transport button:active { transform: scale(0.94); }
+  .progress { -webkit-app-region: no-drag; padding-top: 2px; }
+  .bar { height: 14px; display: flex; align-items: center; cursor: pointer; position: relative; }
+  .bar::before { content: ''; position: absolute; left: 0; right: 0; height: 5px; border-radius: 5px; background: rgba(255,255,255,0.2); }
+  .fill { position: relative; height: 5px; width: 0; border-radius: 5px; background: var(--accent); }
+  .times { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; margin-top: 1px; }
+
+  /* compact (minimised) */
+  body.compact .card { padding: 8px; gap: 10px; align-items: center; border-radius: 20px; }
+  body.compact .art { width: 40px; height: 40px; flex-basis: 40px; border-radius: 10px; }
+  body.compact .col { flex-direction: row; align-items: center; gap: 8px; }
+  body.compact .head { flex: 1; min-width: 0; }
+  body.compact .title { font-size: 14px; }
+  body.compact .artist { font-size: 11.5px; }
+  body.compact .glyph, body.compact .progress, body.compact .tools, body.compact .card:hover .tools { display: none; }
+  body.compact .transport { margin: 0; gap: 4px; }
+  body.compact .transport button { width: 30px; height: 30px; }
+  body.compact .transport .skip { display: none; }
+  body.compact .expand-compact { display: flex; }
+  .expand-compact { display: none; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.14); }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="tint" id="tint"></div><div class="scrim"></div>
+  <img class="art" id="art" alt="">
+  <div class="col">
+    <div class="head">
+      <div class="meta"><div class="title" id="title">Nothing playing</div><div class="artist" id="artist"><span id="artist-text"></span></div></div>
+      <div class="glyph" id="glyph"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="tools">
+        <button class="tool" id="t-compact" title="Minimise"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <button class="tool" id="t-expand" title="Normal view"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+        <button class="tool" id="t-full" title="Fullscreen ambient"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M16 21h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+        <button class="tool" id="t-close" title="Close mini player"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+      <button class="expand-compact" id="t-uncompact" title="Expand"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+    </div>
+    <div class="transport">
+      <button class="skip" id="b-prev" title="Previous"><svg width="30" height="22" viewBox="0 0 30 22" fill="currentColor"><path d="M14 2 3 11l11 9z"/><path d="M27 2 16 11l11 9z"/></svg></button>
+      <button id="b-play" title="Play / pause">
+        <svg id="i-play" width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>
+        <svg id="i-pause" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5.5" y="4" width="4.6" height="16" rx="1.4"/><rect x="13.9" y="4" width="4.6" height="16" rx="1.4"/></svg>
+      </button>
+      <button class="skip" id="b-next" title="Next"><svg width="30" height="22" viewBox="0 0 30 22" fill="currentColor"><path d="M16 2l11 9-11 9z"/><path d="M3 2l11 9L3 20z"/></svg></button>
+    </div>
+    <div class="progress">
+      <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+      <div class="times"><span id="t-cur">0:00</span><span id="t-left">-0:00</span></div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const fmt = (x) => { x = Math.max(0, Math.floor(x || 0)); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
+  let cover = '';
+  let dur = 0;
+
+  window.miniPlayer.onState((s) => {
+    if (!s) return;
+    $('title').textContent = s.title || 'Nothing playing';
+    const at = $('artist-text');
+    if (at.textContent !== (s.artist || '')) {
+      at.textContent = s.artist || '';
+      const a = $('artist');
+      a.classList.remove('scroll');
+      requestAnimationFrame(() => { if (at.scrollWidth - 36 > a.clientWidth) a.classList.add('scroll'); });
+    }
+    if (s.cover !== cover) {
+      cover = s.cover || '';
+      $('art').src = cover;
+      $('tint').style.backgroundImage = cover ? `url("${cover}")` : 'none';
+    }
+    document.body.classList.toggle('paused', !s.playing);
+    $('i-play').style.display = s.playing ? 'none' : '';
+    $('i-pause').style.display = s.playing ? '' : 'none';
+    dur = s.dur || 0;
+    const pos = s.pos || 0;
+    $('fill').style.width = dur ? `${Math.min(100, (pos / dur) * 100)}%` : '0%';
+    $('t-cur').textContent = fmt(pos);
+    $('t-left').textContent = dur ? `-${fmt(dur - pos)}` : '-0:00';
+  });
+  window.miniPlayer.onMode((m) => document.body.classList.toggle('compact', !!(m && m.compact)));
+
+  $('b-play').onclick = () => window.miniPlayer.command('toggle');
+  $('b-prev').onclick = () => window.miniPlayer.command('prev');
+  $('b-next').onclick = () => window.miniPlayer.command('next');
+  $('bar').addEventListener('click', (e) => {
+    const r = $('bar').getBoundingClientRect();
+    window.miniPlayer.command('seek', Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)));
+  });
+  $('t-compact').onclick = () => window.miniPlayer.action('compact');
+  $('t-uncompact').onclick = () => window.miniPlayer.action('compact');
+  $('t-expand').onclick = () => window.miniPlayer.action('expand');
+  $('t-full').onclick = () => window.miniPlayer.action('fullscreen');
+  $('t-close').onclick = () => window.miniPlayer.action('close');
+})();
+</script>
+</body>
+</html>

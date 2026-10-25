@@ -377,6 +377,84 @@ function runGUI() {
   app.on('browser-window-blur', (e, w) => { if (w === mainWindow) updateEdgeOverlay(); });
   app.on('before-quit', () => { if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.destroy(); });
 
+  // Pinned mini player (Now Playing card): a small always-on-top window that mirrors playback.
+  let miniWin = null;
+  let miniCompact = false;
+  let miniPos = null;
+  const MINI_FULL = { width: 310, height: 150 };
+  const MINI_COMPACT = { width: 270, height: 70 };
+
+  function showMini() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const size = miniCompact ? MINI_COMPACT : MINI_FULL;
+    if (!miniWin || miniWin.isDestroyed()) {
+      const wa = screen.getDisplayMatching(mainWindow.getBounds()).workArea;
+      // same spot as the macOS Now Playing widget: top-right, 17pt from the edge, 7pt under the menu bar (6pt is shadow room)
+      const pos = miniPos || { x: wa.x + wa.width - size.width - 11, y: wa.y + 1 };
+      miniWin = new BrowserWindow({
+        ...pos, ...size,
+        transparent: true, frame: false, hasShadow: true, resizable: false, maximizable: false, fullscreenable: false,
+        alwaysOnTop: true, skipTaskbar: true, show: false,
+        webPreferences: { preload: path.join(__dirname, 'mini-player-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+      });
+      miniWin.setAlwaysOnTop(true, 'floating');
+      if (process.platform === 'darwin') {
+        miniWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        try { app.dock.show(); } catch (_) {}
+      }
+      miniWin.on('moved', () => { if (miniWin && !miniWin.isDestroyed()) { const b = miniWin.getBounds(); miniPos = { x: b.x, y: b.y }; } });
+      miniWin.on('closed', () => { miniWin = null; });
+      miniWin.loadFile(path.join(__dirname, 'mini-player.html'));
+      miniWin.webContents.on('did-finish-load', () => {
+        if (miniWin && !miniWin.isDestroyed()) miniWin.webContents.send('mini-mode', { compact: miniCompact });
+      });
+    }
+    miniWin.showInactive();
+    try { mainWindow.webContents.setBackgroundThrottling(false); } catch (_) {}
+  }
+
+  function hideMini() {
+    if (miniWin && !miniWin.isDestroyed()) miniWin.hide();
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setBackgroundThrottling(true); } catch (_) {}
+  }
+
+  function showMainNormal(openAmbient) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    hideMini();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    if (!openAmbient && mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+    mainWindow.focus();
+    if (openAmbient) mainWindow.webContents.send('mini-command', { cmd: 'ambient' });
+  }
+
+  ipcMain.on('mini-open', () => {
+    showMini();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+      mainWindow.minimize();
+    }
+  });
+  ipcMain.on('mini-state', (e, d) => {
+    if (miniWin && !miniWin.isDestroyed() && miniWin.isVisible()) miniWin.webContents.send('mini-state', d);
+  });
+  ipcMain.on('mini-cmd', (e, d) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini-command', d);
+  });
+  ipcMain.on('mini-action', (e, name) => {
+    if (name === 'compact') {
+      miniCompact = !miniCompact;
+      if (miniWin && !miniWin.isDestroyed()) {
+        const size = miniCompact ? MINI_COMPACT : MINI_FULL;
+        const b = miniWin.getBounds();
+        miniWin.setBounds({ x: b.x + b.width - size.width, y: b.y, width: size.width, height: size.height }, true);
+        miniWin.webContents.send('mini-mode', { compact: miniCompact });
+      }
+    } else if (name === 'expand' || name === 'close') showMainNormal(false);
+    else if (name === 'fullscreen') showMainNormal(true);
+  });
+  app.on('before-quit', () => { if (miniWin && !miniWin.isDestroyed()) miniWin.destroy(); });
+
   ipcMain.on('window-minimize', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
   });
