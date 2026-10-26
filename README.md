@@ -21,6 +21,10 @@
 - **Pinned mini player.** A Now Playing style card that stays on top of every app and desktop, with minimise, normal view, fullscreen and close.
 - **Frosted window on macOS.** Your wallpaper shows as a plain blur behind every screen.
 - **Branded installer** with a drag-to-Applications window.
+- **Better playback** (Settings, Playback):
+  - **Crossfade** (0 to 12 s) that is a real overlap: the song that is ending keeps playing on a second deck while the next one fades in.
+  - **Automix [Beta]**, in the spirit of Apple Music's: it analyses each song (tempo, outro, key), starts the blend on a beat of the outgoing song, speeds the incoming song up or down by a few percent to match the tempo, lines up the beats, swaps the bass across the blend, gives songs in compatible keys a longer blend and clashing keys a short one, and skips a silent intro.
+  - **Skip silence**, **Spatial audio** (stereo widening) and **AutoPlay** (similar songs when the queue runs out, from YouTube Music's radio).
 
 <p align="center">
   <img src="docs/listening.png" alt="Your listening" width="90%">
@@ -77,4 +81,4 @@ No telemetry. Settings, your listening stats and your library stay on your machi
 
 ## Credits and licence
 
-Gaane started from the open-source Riff player (MIT). The listening-stats and layout ideas were inspired by BitChord. See [LICENSE](LICENSE).
+Gaane started from the open-source Riff player (MIT). The listening-stats and playback ideas were inspired by BitChord; Automix is written from scratch for Gaane (BitChord's own Automix engine is AGPL and is not used). See [LICENSE](LICENSE).

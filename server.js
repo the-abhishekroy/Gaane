@@ -10,6 +10,8 @@ const dns = require('dns');
 const net = require('net');
 
 const PORT = 38472;
+// the port actually bound (a second instance falls back to a random one); URLs handed to the page use this
+let ACTIVE_PORT = PORT;
 const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand, resolveDownloadDir, resolveBinary } = require('./platform');
 const logger = require('./logger');
 const ytmusic = require('./ytmusic');
@@ -1333,7 +1335,7 @@ async function prefetchTrack(trackUrl, trackId, platform) {
         isLocal: false,
         streamUrl: streamUrl,
         isHls: isHls,
-        proxyUrl: `http://127.0.0.1:${PORT}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
+        proxyUrl: `http://127.0.0.1:${ACTIVE_PORT}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
       };
       streamUrlCache.set(cacheKey, { timestamp: Date.now(), data });
       if (cleanId && cleanId !== cacheKey) {
@@ -1762,7 +1764,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     const data = {
       success: true,
       isLocal: true,
-      streamUrl: `http://127.0.0.1:${PORT}/api/local-track?id=${encodeURIComponent(cleanId)}`
+      streamUrl: `http://127.0.0.1:${ACTIVE_PORT}/api/local-track?id=${encodeURIComponent(cleanId)}`
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(data));
@@ -1773,7 +1775,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
       success: true,
       isLocal: true,
       isDownload: true,
-      streamUrl: `http://127.0.0.1:${PORT}/api/downloaded-track?name=${encodeURIComponent(downloadedName)}`
+      streamUrl: `http://127.0.0.1:${ACTIVE_PORT}/api/downloaded-track?name=${encodeURIComponent(downloadedName)}`
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(data));
@@ -1850,7 +1852,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     isLocal: false,
     streamUrl: streamUrl,
     isHls: isHls,
-    proxyUrl: `http://127.0.0.1:${PORT}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
+    proxyUrl: `http://127.0.0.1:${ACTIVE_PORT}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
   };
 
   resolveLookup(data);
@@ -4789,7 +4791,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ 
       cached: !!cachedFile, 
-      streamUrl: cachedFile ? `http://127.0.0.1:${PORT}/api/local-track?id=${encodeURIComponent(cleanId)}` : null 
+      streamUrl: cachedFile ? `http://127.0.0.1:${ACTIVE_PORT}/api/local-track?id=${encodeURIComponent(cleanId)}` : null 
     }));
   }
 
@@ -4903,7 +4905,7 @@ const server = http.createServer(async (req, res) => {
         title: item.title,
         artist: item.artist,
         duration: Number(item.duration) || 0,
-        thumbnail: fs.existsSync(localCoverPath(item.id)) ? `http://127.0.0.1:${PORT}/api/local-cover?id=${encodeURIComponent(item.id)}` : ''
+        thumbnail: fs.existsSync(localCoverPath(item.id)) ? `http://127.0.0.1:${ACTIVE_PORT}/api/local-cover?id=${encodeURIComponent(item.id)}` : ''
       }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(list));
@@ -4977,7 +4979,7 @@ const server = http.createServer(async (req, res) => {
             artist: meta.artist || 'Unknown artist',
             duration: meta.duration || 0,
             thumbnail: meta.thumbnail || '',
-            localThumbnail: fs.existsSync(path.join(THUMBNAILS_DIR, `${cleanId}.jpg`)) ? `http://127.0.0.1:${PORT}/api/local-thumbnail?id=${cleanId}` : (meta.thumbnail || ''),
+            localThumbnail: fs.existsSync(path.join(THUMBNAILS_DIR, `${cleanId}.jpg`)) ? `http://127.0.0.1:${ACTIVE_PORT}/api/local-thumbnail?id=${cleanId}` : (meta.thumbnail || ''),
             platform: meta.platform || 'youtube',
             fileSize: stat.size,
             lastPlayed: meta.lastPlayed || stat.mtimeMs,
@@ -5080,6 +5082,7 @@ function startServer(port = PORT) {
     server.listen(port, '127.0.0.1', () => {
       const address = server.address();
       const bound = address && typeof address === 'object' ? address.port : port;
+      ACTIVE_PORT = bound;
       console.log(`devsize internal server running on http://127.0.0.1:${bound}`);
       require('./tools').updateYtDlpIfManaged().catch(() => {});
       resolve(bound);
@@ -5087,6 +5090,7 @@ function startServer(port = PORT) {
       if (err.code === 'EADDRINUSE') {
         server.listen(0, '127.0.0.1', () => {
           const p = server.address().port;
+          ACTIVE_PORT = p;
           console.log(`devsize internal server running on fallback port http://127.0.0.1:${p}`);
           require('./tools').updateYtDlpIfManaged().catch(() => {});
           resolve(p);

@@ -131,6 +131,12 @@
       if (!this.graphInitialized) {
         try {
           this.mediaSource = this.ctx.createMediaElementSource(audioElement);
+          // the playing deck: its own gain (for crossfades) and a bass shelf (for the bass swap)
+          this.mainDeck = this.ctx.createGain();
+          this.mainBass = this.ctx.createBiquadFilter();
+          this.mainBass.type = 'lowshelf'; this.mainBass.frequency.value = 160; this.mainBass.gain.value = 0;
+          this.mediaSource.connect(this.mainBass);
+          this.mainBass.connect(this.mainDeck);
 
           this.stdInput = this.ctx.createGain();
           this.hqInput = this.ctx.createGain();
@@ -281,7 +287,8 @@
       this._routingState = stateKey;
 
       try {
-        this.mediaSource.disconnect();
+        this.mainDeck.disconnect();
+        if (this.ghostDeck) this.ghostDeck.disconnect();
         this.stdInput.disconnect();
         this.hqLimiter.disconnect();
         this.bus.disconnect();
@@ -297,11 +304,9 @@
       } catch (e) {}
 
       const inputNode = isHqOn ? this.hqLimiter : this.stdInput;
-      if (isHqOn) {
-        this.mediaSource.connect(this.hqInput);
-      } else {
-        this.mediaSource.connect(this.stdInput);
-      }
+      const deckTarget = isHqOn ? this.hqInput : this.stdInput;
+      this.mainDeck.connect(deckTarget);
+      if (this.ghostDeck) this.ghostDeck.connect(deckTarget);
 
       if (isEqOn) {
         inputNode.connect(this.eqLow);
@@ -331,6 +336,126 @@
       }
 
       this._applyHqParams();
+    }
+
+    // ---- Mix support: a second ("ghost") deck that carries the outgoing track during a crossfade ----
+    ensureGhost(ghostElement) {
+      if (!this.graphInitialized || !ghostElement) return null;
+      if (this.ghostElement === ghostElement && this.ghostDeck) return this.ghostDeck;
+      this.ghostElement = ghostElement;
+      this.ghostSource = this.ctx.createMediaElementSource(ghostElement);
+      this.ghostBass = this.ctx.createBiquadFilter();
+      this.ghostBass.type = 'lowshelf'; this.ghostBass.frequency.value = 160; this.ghostBass.gain.value = 0;
+      this.ghostDeck = this.ctx.createGain();
+      this.ghostDeck.gain.value = 0;
+      this.ghostSource.connect(this.ghostBass);
+      this.ghostBass.connect(this.ghostDeck);
+      this._routingState = null;
+      this._updateRouting();
+      return this.ghostDeck;
+    }
+
+    // equal-power curves, scheduled on the audio clock
+    _curve(rising, n = 64) {
+      const c = new Float32Array(n);
+      for (let i = 0; i < n; i++) { const t = i / (n - 1); c[i] = rising ? Math.sin(t * Math.PI / 2) : Math.cos(t * Math.PI / 2); }
+      return c;
+    }
+
+    // outroAware: the outgoing song is already fading by itself, so the new one comes in sooner and the old one
+    // is only faded over the last part (keeps the loudness of the join even)
+    _shapedCurve(rising, outroAware, n = 96) {
+      if (!outroAware) return this._curve(rising, n);
+      const c = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / (n - 1);
+        c[i] = rising ? Math.sin(Math.min(1, t * 1.7) * Math.PI / 2) : Math.cos(Math.max(0, (t - 0.45) / 0.55) * Math.PI / 2);
+      }
+      return c;
+    }
+
+    crossfadeDecks(durationSec, bassSwap, outroAware) {
+      if (!this.ctx || !this.mainDeck || !this.ghostDeck) return;
+      const now = this.ctx.currentTime, d = Math.max(0.2, durationSec);
+      for (const g of [this.mainDeck.gain, this.ghostDeck.gain]) { g.cancelScheduledValues(now); }
+      this.mainDeck.gain.setValueAtTime(0, now);
+      this.mainDeck.gain.setValueCurveAtTime(this._shapedCurve(true, outroAware), now, d);
+      this.ghostDeck.gain.setValueAtTime(1, now);
+      this.ghostDeck.gain.setValueCurveAtTime(this._shapedCurve(false, outroAware), now, d);
+      if (bassSwap && d >= 1.5) {
+        const dip = d >= 6 ? -14 : -8;
+        // outgoing track gives up its bass over the second half; the incoming one starts without bass and gets it at the midpoint
+        // one sharp hand-over of the bass at the midpoint, so there is never a hole nor two basslines
+        const a = now + d * 0.47, b = now + d * 0.53;
+        this.ghostBass.gain.cancelScheduledValues(now); this.ghostBass.gain.setValueAtTime(0, now);
+        this.ghostBass.gain.setValueAtTime(0, a); this.ghostBass.gain.linearRampToValueAtTime(dip, b);
+        this.mainBass.gain.cancelScheduledValues(now); this.mainBass.gain.setValueAtTime(dip, now);
+        this.mainBass.gain.setValueAtTime(dip, a); this.mainBass.gain.linearRampToValueAtTime(0, b);
+      }
+    }
+
+    // put the decks back to normal (main audible, ghost silent)
+    resetDecks() {
+      if (!this.ctx || !this.mainDeck) return;
+      const now = this.ctx.currentTime;
+      const gs = [this.mainDeck.gain, this.mainBass && this.mainBass.gain, this.ghostDeck && this.ghostDeck.gain, this.ghostBass && this.ghostBass.gain].filter(Boolean);
+      gs.forEach((g) => g.cancelScheduledValues(now));
+      this.mainDeck.gain.setValueAtTime(1, now);
+      if (this.mainBass) this.mainBass.gain.setValueAtTime(0, now);
+      if (this.ghostDeck) this.ghostDeck.gain.setValueAtTime(0, now);
+      if (this.ghostBass) this.ghostBass.gain.setValueAtTime(0, now);
+    }
+
+    // hand the sound from the main deck to the ghost deck without a gap
+    swapToGhost() {
+      if (!this.ctx || !this.mainDeck || !this.ghostDeck) return;
+      const now = this.ctx.currentTime;
+      this.mainDeck.gain.cancelScheduledValues(now); this.ghostDeck.gain.cancelScheduledValues(now);
+      this.ghostDeck.gain.setValueAtTime(this.ghostDeck.gain.value, now);
+      this.ghostDeck.gain.linearRampToValueAtTime(1, now + 0.02);
+      this.mainDeck.gain.setValueAtTime(this.mainDeck.gain.value, now);
+      this.mainDeck.gain.linearRampToValueAtTime(0, now + 0.02);
+    }
+
+    // ---- Spatial audio: widens the stereo image (mid/side) ----
+    setSpatial(amount) {
+      this.spatialAmount = Math.max(0, Math.min(1, amount || 0));
+      if (!this.graphInitialized) return;
+      if (!this.spatialIn) {
+        const c = this.ctx;
+        this.spatialIn = c.createGain();
+        this.spatialOut = c.createGain();
+        const split = c.createChannelSplitter(2);
+        const merge = c.createChannelMerger(2);
+        const mkGain = (v) => { const g = c.createGain(); g.gain.value = v; return g; };
+        // M = (L+R)/2 , S = (L-R)/2 * width ; L' = M+S , R' = M-S
+        this.spatialIn.connect(split);
+        const mL = mkGain(0.5), mR = mkGain(0.5), sL = mkGain(0.5), sR = mkGain(-0.5);
+        this.spatialSide = mkGain(1);
+        split.connect(mL, 0); split.connect(mR, 1); split.connect(sL, 0); split.connect(sR, 1);
+        const mid = mkGain(1), side = mkGain(1);
+        mL.connect(mid); mR.connect(mid); sL.connect(side); sR.connect(side);
+        side.connect(this.spatialSide);
+        const negSide = mkGain(-1);
+        this.spatialSide.connect(negSide);
+        const left = mkGain(1), right = mkGain(1);
+        mid.connect(left); this.spatialSide.connect(left);
+        mid.connect(right); negSide.connect(right);
+        left.connect(merge, 0, 0); right.connect(merge, 0, 1);
+        merge.connect(this.spatialOut);
+      }
+      this.spatialSide.gain.value = 1 + this.spatialAmount * 1.1;
+      const on = this.spatialAmount > 0.01;
+      if (this._spatialOn === on) return;
+      this._spatialOn = on;
+      try { this.normLimiter.disconnect(); } catch (e) {}
+      try { this.spatialOut.disconnect(); } catch (e) {}
+      if (on) {
+        this.normLimiter.connect(this.spatialIn);
+        this.spatialOut.connect(this.analyserNode);
+      } else {
+        this.normLimiter.connect(this.analyserNode);
+      }
     }
 
     flushEffects() {
@@ -589,6 +714,17 @@
     getTimeDomainData(buffer) {
       if (!this._analyserConnected) this.setAnalyserEnabled(true);
       if (this.analyserNode) this.analyserNode.getByteTimeDomainData(buffer);
+    }
+
+    // loudness of what is actually coming out (after the effects), in dBFS
+    getOutputDb() {
+      if (!this.analyserNode) return -120;
+      if (!this._outBuf || this._outBuf.length !== this.analyserNode.fftSize) this._outBuf = new Float32Array(this.analyserNode.fftSize);
+      this.analyserNode.getFloatTimeDomainData(this._outBuf);
+      let sum = 0;
+      for (let i = 0; i < this._outBuf.length; i++) sum += this._outBuf[i] * this._outBuf[i];
+      const rms = Math.sqrt(sum / this._outBuf.length);
+      return rms > 0 ? 20 * Math.log10(rms) : -120;
     }
 
     getLevelDb() {

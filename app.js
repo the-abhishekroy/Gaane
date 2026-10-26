@@ -2867,6 +2867,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('riff_track_art', JSON.stringify(all));
   }
 
+  // the old fade-out / fade-in is only used when the two-deck mix cannot run (e.g. HLS streams)
+  function legacyCrossfadeSeconds() {
+    if (!window.GaaneMix) return 0;
+    const c = GaaneMix.settings;
+    return c.automix ? 6 : c.crossfade;
+  }
   let crossfadeTriggered = false;
   let crossfadeFadeInPending = false;
   let currentAlbumPlayRunId = 0;
@@ -2884,6 +2890,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!track || !el.nativeAudio) return;
     resetLevelWatcher();
     vizPrev = null;
+    if (window.GaaneMix) GaaneMix.onTrackStart();
     if (state.currentTrack && state.currentTrack.id !== track.id && !navigatingBack) pushPlayHistory(state.currentTrack);
 
     if (!state._isNaturalEnding && state.myWaveActive && state.currentTrack && !isSameTrack(state.currentTrack, track)) {
@@ -2901,6 +2908,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     crossfadeTriggered = false;
     state.nextTrackPrefetched = false;
     initAudioContext();
+    if (window.GaaneMix) GaaneMix.applySpatial();
     el.nativeAudio.preload = 'auto';
 
     try {
@@ -5095,7 +5103,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (curToken !== smoothFadeToken) return;
 
-    if (crossfadeFadeInPending) {
+    const keepGain = crossfadeFadeInPending || (window.GaaneMix && GaaneMix.isBlending());
+    if (keepGain) {
       if (audioEngine && audioEngine.fadeGain && audioEngine.ctx) {
         try {
           audioEngine.fadeGain.gain.cancelScheduledValues(audioEngine.ctx.currentTime);
@@ -5116,7 +5125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.nativeAudio.play().catch(e => console.warn('Play error:', e));
     }
 
-    if (!crossfadeFadeInPending && audioEngine && audioEngine.fadeGain && audioEngine.ctx) {
+    if (!keepGain && audioEngine && audioEngine.fadeGain && audioEngine.ctx) {
       try {
         const ct = audioEngine.ctx.currentTime;
         audioEngine.fadeGain.gain.setTargetAtTime(1, ct, 0.05);
@@ -5188,6 +5197,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (added && state.queueIndex + 1 < state.queue.length) {
             playNext();
           }
+        });
+        return;
+      }
+      if (window.GaaneMix && GaaneMix.settings.autoplay && !state.isRepeat && !state._autoplayBusy) {
+        state._autoplayBusy = true;
+        GaaneMix.extendQueue().then((n) => {
+          state._autoplayBusy = false;
+          if (n > 0 && state.queueIndex + 1 < state.queue.length) { playNext(); return; }
+          state.queueIndex = 0; recordPlayedIndex(0); playTrack(state.queue[0]);
         });
         return;
       }
@@ -5304,7 +5322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (crossfadeFadeInPending) {
         crossfadeFadeInPending = false;
-        const X = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
+        const X = legacyCrossfadeSeconds();
         if (X > 0 && audioEngine) audioEngine.fadeIn(X / 2);
       }
       if (typeof m3cStart === 'function') m3cStart();
@@ -5396,7 +5414,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? el.nativeAudio.duration
         : (state.currentTrack && Number.isFinite(state.currentTrack.duration) ? state.currentTrack.duration : 0);
 
-      const X = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
+      const mixHandled = window.GaaneMix ? GaaneMix.onTimeUpdate(cur, dur) : false;
+      const X = mixHandled ? 0 : legacyCrossfadeSeconds();
       if (X > 0 && !crossfadeTriggered && !state.isRepeat && dur > X && cur >= dur - X && (!audioEngine || !audioEngine.isLiveStream(el.nativeAudio))) {
         crossfadeTriggered = true;
         crossfadeFadeInPending = true;
@@ -5412,6 +5431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (state.isPlaying && dur > 0 && cur / dur > 0.5 && !state.nextTrackPrefetched) {
         state.nextTrackPrefetched = true;
         prefetchNextQueueTrack();
+        if (window.GaaneMix) GaaneMix.maybeExtend();
       }
 
       if (!state.isPlaying && typeof m3cDraw === 'function' && typeof m3cEnabled === 'function' && m3cEnabled()) {
@@ -10852,18 +10872,37 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  const sliderCrossfade = document.getElementById('slider-crossfade');
-  const valCrossfade = document.getElementById('val-crossfade');
-  if (sliderCrossfade) {
-    const cf = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
-    sliderCrossfade.value = cf;
-    if (valCrossfade) valCrossfade.textContent = cf > 0 ? `${cf}s` : 'Off';
-    sliderCrossfade.addEventListener('input', (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (valCrossfade) valCrossfade.textContent = v > 0 ? `${v}s` : 'Off';
-      localStorage.setItem('riff_crossfade', String(v));
+  // Playback settings: crossfade, Automix, skip silence, spatial audio, AutoPlay
+  (() => {
+    if (!window.GaaneMix) return;
+    GaaneMix.init({
+      el, state,
+      engine: () => audioEngine,
+      playNext: () => playNext(),
+      base: () => `http://127.0.0.1:${state.serverPort}`,
+      hls: () => hlsInstance,
+      queueChanged: () => { updateQueueBadge(); if (state.currentView === 'queue') renderQueueView(); }
     });
-  }
+    const cfg = () => GaaneMix.settings;
+    const slider = document.getElementById('slider-crossfade'), val = document.getElementById('val-crossfade');
+    const showCf = () => { const c = cfg(); if (val) val.textContent = c.automix ? 'Automix' : (c.crossfade > 0 ? `${c.crossfade}s` : 'Off'); if (slider) slider.disabled = !!c.automix; };
+    if (slider) {
+      slider.value = cfg().crossfade;
+      slider.addEventListener('input', (e) => { GaaneMix.set({ crossfade: parseInt(e.target.value, 10) }); showCf(); });
+    }
+    const bind = (id, key) => {
+      const b = document.getElementById(id); if (!b) return;
+      b.classList.toggle('active', !!cfg()[key]);
+      b.addEventListener('click', () => { const v = !cfg()[key]; GaaneMix.set({ [key]: v }); b.classList.toggle('active', v); showCf(); });
+    };
+    bind('btn-automix', 'automix'); bind('btn-skip-silence', 'skipSilence'); bind('btn-autoplay', 'autoplay');
+    showCf();
+    const sp = document.getElementById('slider-spatial'), spv = document.getElementById('val-spatial');
+    const showSp = () => { if (spv) spv.textContent = cfg().spatial > 0 ? `${Math.round(cfg().spatial * 100)}%` : 'Off'; };
+    if (sp) { sp.value = Math.round(cfg().spatial * 100); sp.addEventListener('input', (e) => { GaaneMix.set({ spatial: parseInt(e.target.value, 10) / 100 }); showSp(); }); }
+    showSp();
+    document.getElementById('btn-open-audio-from-playback')?.addEventListener('click', () => document.getElementById('btn-open-settings')?.click());
+  })();
 
   if (el.btnTrEnabled) {
     el.btnTrEnabled.addEventListener('click', () => {

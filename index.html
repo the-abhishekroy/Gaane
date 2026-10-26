@@ -537,6 +537,13 @@
                 </svg>
                 <span>Banners</span>
               </button>
+              <button class="settings-nav-btn" data-cat="playback">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/>
+                  <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
+                </svg>
+                <span>Playback</span>
+              </button>
               <button class="settings-nav-btn" data-cat="tracks">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M9 18V5l12-2v13"/>
@@ -1075,6 +1082,69 @@
                 </div>
               </div>
 
+              <div class="settings-section" data-cat="playback">
+                <div class="m3-group">
+            <div class="setting-item">
+              <div class="setting-item-top">
+                <span class="setting-name">Crossfade</span>
+                <span class="setting-value" id="val-crossfade">Off</span>
+              </div>
+              <input type="range" class="pill-range" id="slider-crossfade" min="0" max="12" step="1" value="0">
+              <div class="setting-hints"><span>Off</span><span>6s</span><span>12s</span></div>
+              <div class="setting-hints" style="opacity:.7"><span>The next song fades in while the last one fades out, both playing at once.</span></div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Automix [Beta]</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Works out each blend itself: starts in the song's outro, matches the tempo of the next song and swaps the bass. Replaces the crossfade length.</span>
+                </div>
+                <button class="effect-switch-btn" id="btn-automix"><span class="thumb"></span></button>
+              </div>
+            </div>
+            <div class="setting-item" id="automix-status-row" style="display:none">
+              <div class="setting-item-top"><span class="setting-name">Last mix</span><span class="setting-value" id="automix-status">-</span></div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Skip silence</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Speeds through long quiet gaps instead of playing them out</span>
+                </div>
+                <button class="effect-switch-btn" id="btn-skip-silence"><span class="thumb"></span></button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Spatial audio</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Widens stereo songs for a more immersive feel</span>
+                </div>
+                <span class="setting-value" id="val-spatial">Off</span>
+              </div>
+              <input type="range" class="pill-range" id="slider-spatial" min="0" max="100" step="5" value="0">
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">AutoPlay</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Keeps the music going with similar songs when your queue runs out</span>
+                </div>
+                <button class="effect-switch-btn" id="btn-autoplay"><span class="thumb"></span></button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Sleep timer and playback speed</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">In the audio panel (the sliders button in the bottom bar)</span>
+                </div>
+                <button class="btn-outline-pill" id="btn-open-audio-from-playback">Open</button>
+              </div>
+            </div>
+                </div>
+              </div>
+
               <div class="settings-section" data-cat="tracks">
                 <div class="m3-group">
             <div class="setting-item">
@@ -1130,15 +1200,6 @@
                 </div>
                 <button class="effect-switch-btn active" id="btn-progress-bg"><span class="thumb"></span></button>
               </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-item-top">
-                <span class="setting-name">Crossfade</span>
-                <span class="setting-value" id="val-crossfade">Off</span>
-              </div>
-              <input type="range" class="pill-range" id="slider-crossfade" min="0" max="12" step="1" value="0">
-              <div class="setting-hints"><span>Off</span><span>6s</span><span>12s</span></div>
             </div>
 
             <div class="setting-item">
@@ -2963,6 +3024,8 @@
 
   <script src="assets/hls.min.js"></script>
   <script src="audio-engine.js"></script>
+  <script src="mix-analysis.js"></script>
+  <script src="mix-engine.js"></script>
   <script src="m3shapes.js"></script>
   <script src="lyrics-rtl.js"></script>
   <script src="track-sort.js"></script>
