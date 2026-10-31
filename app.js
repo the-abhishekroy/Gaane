@@ -2464,7 +2464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function handleVisibilityChange(visible) {
     state.isWindowVisible = visible;
     syncBgVideoPlayback();
-    if (audioEngine && audioEngine.setHidden) audioEngine.setHidden(!visible);
+    if (audioEngine && audioEngine.setHidden) audioEngine.setHidden(!visible && !(window.__gaaneAmbient && window.__gaaneAmbient.cfg && window.__gaaneAmbient.cfg.wallpaper));
     if (!visible) {
       if (typeof lyricsScrollRaf !== 'undefined' && lyricsScrollRaf) {
         cancelAnimationFrame(lyricsScrollRaf);
@@ -15258,7 +15258,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Ambient extras: Verse lyrics (kinetic, word by word) and the Live backdrop -------------------------------------
   const ambientExtras = (() => {
     const read = () => { try { return JSON.parse(localStorage.getItem('gaane_ambient') || '{}'); } catch (e) { return {}; } };
-    const cfg = Object.assign({ verse: false, vstyle: 'reel', vmode: 'source', scene: 'off', where: 'ambient' }, read(), (() => {
+    const cfg = Object.assign({ verse: false, vstyle: 'reel', vmode: 'source', scene: 'off', where: 'ambient', wallpaper: false }, read(), (() => {
       // carry over the earlier simple settings
       const o = {};
       try { const old = JSON.parse(localStorage.getItem('gaane_backdrop') || '{}'); if (old.scene) o.scene = old.scene; if (old.where) o.where = old.where; } catch (e) {}
@@ -15328,6 +15328,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else bd.stop();
     }
 
+    // ---- desktop wallpaper: send the spectrum to the wallpaper windows (main process) about 30 times a second
+    const isMac = !!(window.electronAPI && window.electronAPI.isMac);
+    function pushWallpaperConfig() {
+      if (window.electronAPI && window.electronAPI.setWallpaper) window.electronAPI.setWallpaper({ on: isMac && cfg.wallpaper, scene: cfg.scene === 'off' ? 'aurora' : cfg.scene });
+    }
+    setInterval(() => {
+      if (!(isMac && cfg.wallpaper) || !window.electronAPI || !window.electronAPI.sendWallpaperFrame) return;
+      try { window.electronAPI.sendWallpaperFrame({ bands: liveBands(), palette: edgePalette }); } catch (e) {}
+    }, 33);
+    setTimeout(pushWallpaperConfig, 1500);
+
     // ---- the option chips (the same lists appear in the ambient settings panel and in Settings, Live backdrop)
     const SCENES = [['off', 'Off'], ['aurora', 'Aurora'], ['voxels', 'Voxel wall'], ['contours', 'Contours'], ['ripples', 'Ripples']];
     (window.GaaneBackdrop ? GaaneBackdrop.SCENE_LABELS || [] : []).forEach((x) => { if (!SCENES.some((s) => s[0] === x[0])) SCENES.push(x); });
@@ -15336,9 +15347,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       vstyle: (window.GaaneVerse ? GaaneVerse.STYLES : []).map((s) => [s.id, s.name]),
       vmode: (window.GaaneVerse ? GaaneVerse.MODES : []).map((m) => [m.id, m.name]),
       scene: SCENES,
-      where: [['ambient', 'In ambient mode'], ['app', 'Behind the whole app']]
+      where: [['ambient', 'In ambient mode'], ['app', 'Behind the whole app']],
+      wallpaper: [['0', 'Off'], ['1', 'On']]
     };
-    const current = (k) => (k === 'verse' ? (cfg.verse ? '1' : '0') : cfg[k]);
+    const current = (k) => (k === 'verse' ? (cfg.verse ? '1' : '0') : k === 'wallpaper' ? (cfg.wallpaper ? '1' : '0') : cfg[k]);
     function paint() {
       document.querySelectorAll('[data-chips]').forEach((box) => {
         const k = box.dataset.chips;
@@ -15354,7 +15366,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       else if (k === 'vmode') { cfg.vmode = v; if (verse) verse.setMode(v); }
       else if (k === 'scene') { cfg.scene = v; if (bd && v !== 'off') bd.setScene(v); }
       else if (k === 'where') cfg.where = v;
-      save(); paint(); place();
+      else if (k === 'wallpaper') cfg.wallpaper = v === '1';
+      save(); paint(); place(); pushWallpaperConfig();
     }
     document.querySelectorAll('[data-chips]').forEach((box) => {
       const k = box.dataset.chips;
@@ -15367,6 +15380,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     });
     paint();
+    document.querySelectorAll('[data-mac-only]').forEach((r) => { if (!isMac) r.style.display = 'none'; });
     setInterval(place, 500);
     return { cfg, bd, verse, place, choose };
   })();

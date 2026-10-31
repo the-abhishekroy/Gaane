@@ -4,8 +4,9 @@
 (function (root) {
   const FLAT = ['aurora', 'voxels', 'contours', 'ripples'];
   const POINTS = ['holo', 'pearl', 'vortex', 'tunnel', 'bloom'];
-  const SCENES = FLAT.concat(POINTS);
-  const SCENE_LABELS = [['holo', 'Holo tide'], ['pearl', 'Pearl'], ['vortex', 'Voxel vortex'], ['tunnel', 'Tunnel'], ['bloom', 'Voxel bloom']];
+  const CUBES = ['city', 'terrain'];
+  const SCENES = FLAT.concat(POINTS, CUBES);
+  const SCENE_LABELS = [['holo', 'Holo tide'], ['pearl', 'Pearl'], ['vortex', 'Voxel vortex'], ['tunnel', 'Tunnel'], ['bloom', 'Voxel bloom'], ['city', 'Voxel city'], ['terrain', 'Voxel dunes']];
   const NB = 28;
 
   const VERT = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
@@ -219,6 +220,85 @@ void main(){
     }
   };
 
+
+  // ---- real voxels: lit, fogged cubes, one instance per grid cell ----------------------------------------------
+  const CHEAD = `
+precision highp float;
+attribute vec3 pos; attribute vec3 nrm; attribute vec3 g;
+uniform vec2 uRes; uniform float uTime, uBass, uMid, uHigh, uBeat;
+uniform vec3 uC0, uC1, uC2, uC3;
+uniform float uB[${NB}];
+varying vec3 vC; varying float vFog;
+float band(float x){ float f = clamp(x, 0.0, 1.0) * ${NB - 1}.0; int i0 = int(floor(f)); float fr = f - floor(f); float a = 0.0, b = 0.0;
+  for (int i = 0; i < ${NB}; i++){ if (i == i0) a = uB[i]; if (i == i0 + 1) b = uB[i]; } return mix(a, b, fr); }
+vec3 pal(float t){ t = clamp(t, 0.0, 1.0) * 3.0; return t < 1.0 ? mix(uC0, uC1, t) : t < 2.0 ? mix(uC1, uC2, t - 1.0) : mix(uC2, uC3, t - 2.0); }
+float h1(float n){ return fract(sin(n * 127.1) * 43758.5453); }
+float n3(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  float n = i.x + i.y * 57.0 + i.z * 113.0;
+  return mix(mix(mix(h1(n), h1(n + 1.0), f.x), mix(h1(n + 57.0), h1(n + 58.0), f.x), f.y), mix(mix(h1(n + 113.0), h1(n + 114.0), f.x), mix(h1(n + 170.0), h1(n + 171.0), f.x), f.y), f.z); }
+vec2 rot(vec2 p, float a){ float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+void finish(vec3 world, vec3 n, vec3 base, float lvl, vec3 cam, float pitch, float fov){
+  vec3 p = world - cam;
+  float cp = cos(pitch), sp = sin(pitch);
+  p = vec3(p.x, cp * p.y - sp * p.z, sp * p.y + cp * p.z);
+  float z = max(0.1, -p.z); float asp = uRes.x / uRes.y;
+  gl_Position = vec4(p.x / (z * fov * asp), p.y / (z * fov), (z - 0.1) / 120.0 * 2.0 - 1.0, 1.0);
+  vec3 L = normalize(vec3(0.45, 0.9, 0.35));
+  float diff = max(dot(n, L), 0.0);
+  float rim = pow(1.0 - abs(n.y), 2.0) * 0.12;
+  vC = base * (0.30 + 0.85 * diff) + base * rim + vec3(0.04) * lvl;
+  vFog = clamp(z / 70.0, 0.0, 1.0);
+}
+`;
+  const CFRAG = `
+precision mediump float; varying vec3 vC; varying float vFog; uniform vec3 uBg;
+void main(){ gl_FragColor = vec4(mix(vC, uBg, vFog * vFog), 1.0); }`;
+  const CBS = {
+    city: {
+      grid: () => { const N = 46, a = new Float32Array(N * N * 3); let k = 0; for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { a[k++] = i; a[k++] = j; a[k++] = Math.random(); } return a; },
+      vs: CHEAD + `void main(){
+  float N = 46.0; vec2 cell = g.xy - N * 0.5 + 0.5;
+  float dist = length(cell) / (N * 0.5);
+  float lvl = band(abs(cell.x) / (N * 0.5) * 0.9 + 0.03);
+  float roam = n3(vec3(cell * 0.22, uTime * 0.12));
+  float idle = (0.5 + 0.5 * sin(cell.x * 0.42 + uTime * 0.8) * sin(cell.y * 0.36 + uTime * 0.6)) * 1.6;
+  float h = 0.3 + idle + lvl * 8.0 * (1.15 - 0.6 * dist) + roam * 2.4 + uBeat * 0.7 * (1.0 - dist) + sin(dist * 9.0 - uTime * 2.4) * (0.15 + uBass * 0.9) * (1.0 - dist);
+  h = max(h, 0.22) * (g.z * 0.25 + 0.85);
+  float yaw = uTime * 0.07;
+  vec3 local = vec3(cell.x + pos.x * 0.92, pos.y * h, cell.y + pos.z * 0.92);
+  vec2 xz = rot(local.xz, yaw);
+  vec3 n = vec3(rot(nrm.xz, yaw).x, nrm.y, rot(nrm.xz, yaw).y);
+  vec3 base = pal(0.05 + h / 9.0 + dist * 0.25) * (0.6 + 0.8 * lvl + 0.3 * uBeat);
+  base = mix(vec3(dot(base, vec3(0.33))), base, 1.4);
+  finish(vec3(xz.x, local.y - 2.0, xz.y), n, base, lvl, vec3(0.0, 17.0, 34.0), 0.5, 0.62);
+}`
+    },
+    terrain: {
+      grid: () => { const N = 72, a = new Float32Array(N * N * 3); let k = 0; for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) { a[k++] = i; a[k++] = j; a[k++] = Math.random(); } return a; },
+      vs: CHEAD + `void main(){
+  float N = 72.0;
+  float x = g.x - N * 0.5 + 0.5;
+  float zf = mod(g.y - uTime * (1.6 + uMid * 2.0), N);
+  float z = zf - N * 0.5;
+  float dist = abs(x) / (N * 0.5);
+  float lvl = band(dist * 0.9 + 0.03);
+  float hills = n3(vec3(x * 0.11, zf * 0.11, 0.0)) * 5.0 + n3(vec3(x * 0.3, zf * 0.3, 1.7)) * 1.4;
+  float h = 0.4 + (0.5 + 0.5 * sin(x * 0.3 + uTime * 0.7)) * 0.9 + hills * (0.5 + dist * 0.8) + lvl * 5.0 * (1.0 - zf / N * 0.5) + uBeat * 0.5 + sin(zf * 0.5 - uTime * 3.0) * uBass * 0.9;
+  h = max(h, 0.25);
+  vec3 local = vec3(x + pos.x * 0.93, pos.y * h, z + pos.z * 0.93);
+  vec3 base = pal(0.08 + h / 12.0 + (1.0 - zf / N) * 0.2) * (0.55 + 0.8 * lvl + 0.25 * uBeat);
+  base = mix(vec3(dot(base, vec3(0.33))), base, 1.4);
+  finish(vec3(local.x, local.y - 3.0, local.z - 8.0), nrm, base, lvl, vec3(0.0, 9.0, 24.0), 0.42, 0.62);
+}`
+    }
+  };
+  // a unit cube: x and z in -0.5..0.5, y in 0..1, with normals
+  const CUBE = (() => {
+    const v = [], f = [[0, 1, 0, [[-.5, 1, -.5], [-.5, 1, .5], [.5, 1, .5], [.5, 1, -.5]]], [0, 0, 1, [[-.5, 0, .5], [.5, 0, .5], [.5, 1, .5], [-.5, 1, .5]]], [0, 0, -1, [[.5, 0, -.5], [-.5, 0, -.5], [-.5, 1, -.5], [.5, 1, -.5]]], [1, 0, 0, [[.5, 0, .5], [.5, 0, -.5], [.5, 1, -.5], [.5, 1, .5]]], [-1, 0, 0, [[-.5, 0, -.5], [-.5, 0, .5], [-.5, 1, .5], [-.5, 1, -.5]]]];
+    for (const [nx, ny, nz, q] of f) for (const i of [0, 1, 2, 0, 2, 3]) v.push(q[i][0], q[i][1], q[i][2], nx, ny, nz);
+    return new Float32Array(v);
+  })();
+
   function hex(c, fallback) {
     const m = /^#?([0-9a-f]{6})$/i.exec(String(c || '').trim());
     const n = m ? parseInt(m[1], 16) : fallback;
@@ -261,7 +341,26 @@ void main(){
       programs[name] = { pr, u, points: true };
       return programs[name];
     }
+    const instExt = gl.getExtension('ANGLE_instanced_arrays');
+    let cubeBuf = null; const cubeInst = {};
+    function cubeProgram(name) {
+      if (programs[name]) return programs[name];
+      const def = CBS[name];
+      const sh = (type, code) => { const x = gl.createShader(type); gl.shaderSource(x, code); gl.compileShader(x); return x; };
+      const vs = sh(gl.VERTEX_SHADER, def.vs), fs = sh(gl.FRAGMENT_SHADER, CFRAG);
+      const pr = gl.createProgram();
+      gl.attachShader(pr, vs); gl.attachShader(pr, fs);
+      gl.bindAttribLocation(pr, 0, 'pos'); gl.bindAttribLocation(pr, 1, 'nrm'); gl.bindAttribLocation(pr, 2, 'g');
+      gl.linkProgram(pr);
+      if (!instExt) { programs[name] = { failed: 'instancing not available' }; return programs[name]; }
+      if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) { programs[name] = { failed: (gl.getShaderInfoLog(vs) || '') + (gl.getShaderInfoLog(fs) || '') + (gl.getProgramInfoLog(pr) || '') }; return programs[name]; }
+      const u = {};
+      ['uRes', 'uTime', 'uBass', 'uMid', 'uHigh', 'uBeat', 'uC0', 'uC1', 'uC2', 'uC3', 'uB', 'uBg'].forEach((k) => { u[k] = gl.getUniformLocation(pr, k); });
+      programs[name] = { pr, u, cubes: true };
+      return programs[name];
+    }
     function program(name) {
+      if (CBS[name]) return cubeProgram(name);
       if (PTS[name]) return pointProgram(name);
       if (programs[name]) return programs[name];
       const sh = (type, code) => { const s = gl.createShader(type); gl.shaderSource(s, code); gl.compileShader(s); return s; };
@@ -312,7 +411,21 @@ void main(){
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.useProgram(P.pr);
       const u = P.u;
-      if (P.points) {
+      if (P.cubes) {
+        if (!cubeBuf) { cubeBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuf); gl.bufferData(gl.ARRAY_BUFFER, CUBE, gl.STATIC_DRAW); }
+        if (!cubeInst[scene]) { const d = CBS[scene].grid(); const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, d, gl.STATIC_DRAW); cubeInst[scene] = { b, count: d.length / 3 }; }
+        const bg = [pal[0][0] * 0.07 + 0.01, pal[0][1] * 0.07 + 0.01, pal[0][2] * 0.07 + 0.015];
+        gl.clearColor(bg[0], bg[1], bg[2], 1); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.disable(gl.BLEND);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuf);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeInst[scene].b);
+        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
+        instExt.vertexAttribDivisorANGLE(2, 1);
+        gl.uniform3f(u.uBg, bg[0], bg[1], bg[2]);
+      } else if (P.points) {
+        gl.disable(gl.DEPTH_TEST);
         if (!pointBuffers[scene]) {
           const data = PTS[scene].n();
           const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
@@ -326,7 +439,7 @@ void main(){
         gl.uniform1f(u.uPx, Math.max(0.6, canvas.height / 520));
         gl.uniform1f(u.uSquare, PTS[scene].square);
       } else {
-        gl.disable(gl.BLEND);
+        gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
         gl.bindBuffer(gl.ARRAY_BUFFER, buf);
         gl.enableVertexAttribArray(0);
         gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
@@ -337,7 +450,8 @@ void main(){
       gl.uniform1f(u.uBeat, beat); gl.uniform1f(u.uBeatT, beatT);
       gl.uniform3fv(u.uC0, pal[0]); gl.uniform3fv(u.uC1, pal[1]); gl.uniform3fv(u.uC2, pal[2]); gl.uniform3fv(u.uC3, pal[3]);
       gl.uniform1fv(u.uB, lv);
-      if (P.points) gl.drawArrays(gl.POINTS, 0, pointBuffers[scene].count); else gl.drawArrays(gl.TRIANGLES, 0, 3);
+      if (P.cubes) { instExt.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 30, cubeInst[scene].count); instExt.vertexAttribDivisorANGLE(2, 0); gl.disableVertexAttribArray(1); gl.disableVertexAttribArray(2); }
+      else if (P.points) gl.drawArrays(gl.POINTS, 0, pointBuffers[scene].count); else gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
     return {

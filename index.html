@@ -1104,6 +1104,15 @@
               <div class="backdrop-pills" data-chips="where" data-pill="backdrop"></div>
             </div>
 
+            <div class="setting-item" data-mac-only>
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Live wallpaper (macOS)</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Draws the backdrop as your desktop wallpaper on every screen, behind your icons and windows, moving with the music. macOS does not let apps draw on the lock screen, so that stays your normal wallpaper. Uses the scene chosen above (Aurora if Off).</span>
+                </div>
+              </div>
+              <div class="backdrop-pills" data-chips="wallpaper" data-pill="backdrop"></div>
+            </div>
             <div class="setting-item">
               <div class="setting-item-top" style="align-items: center;">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
@@ -2888,6 +2897,35 @@
       </svg>
     </button>
     <div class="tvk-panel" id="tvk-panel">
+      <details class="tvk-sec" open><summary>Lyrics view</summary>
+      <div class="tvk-row">
+        <span class="tvk-label">Lyrics view</span>
+        <div class="tvk-pill-group verse-chips" data-chips="verse" data-pill="tvk"></div>
+      </div>
+      <div class="tvk-row" data-verse-only>
+        <span class="tvk-label">Verse style</span>
+        <div class="tvk-pill-group verse-chips" data-chips="vstyle" data-pill="tvk"></div>
+      </div>
+      <div class="tvk-row" data-verse-only>
+        <span class="tvk-label">Verse colours</span>
+        <div class="tvk-pill-group verse-chips" data-chips="vmode" data-pill="tvk"></div>
+      </div>
+      <div class="tvk-row">
+        <div class="tvk-row-header">
+          <span class="tvk-label">Lyrics timing (this song)</span>
+          <span class="tvk-val" id="val-lyric-offset">0 ms</span>
+        </div>
+        <input type="range" class="pill-range" id="lyric-offset" min="-1500" max="1500" step="50" value="0">
+        <button type="button" class="tvk-pill-btn" id="btn-lyric-offset-reset" style="margin-top:6px">Reset</button>
+      </div>
+      </details>
+      <details class="tvk-sec" open><summary>Live backdrop</summary>
+      <div class="tvk-row">
+        <span class="tvk-label">Live backdrop</span>
+        <div class="tvk-pill-group verse-chips" data-chips="scene" data-pill="tvk"></div>
+      </div>
+      </details>
+      <details class="tvk-sec"><summary>Text</summary>
       <div class="tvk-row">
         <label class="tvk-label">Font</label>
         <select class="pill-select" id="tvk-font" style="display:none">
@@ -2964,30 +3002,6 @@
         <input type="range" class="pill-range" id="tvk-gap" min="4" max="40" step="1" value="16">
       </div>
       <div class="tvk-row">
-        <div class="tvk-row-header">
-          <span class="tvk-label">Lyrics timing (this song)</span>
-          <span class="tvk-val" id="val-lyric-offset">0 ms</span>
-        </div>
-        <input type="range" class="pill-range" id="lyric-offset" min="-1500" max="1500" step="50" value="0">
-        <button type="button" class="tvk-pill-btn" id="btn-lyric-offset-reset" style="margin-top:6px">Reset</button>
-      </div>
-      <div class="tvk-row">
-        <span class="tvk-label">Lyrics view</span>
-        <div class="tvk-pill-group verse-chips" data-chips="verse" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row" data-verse-only>
-        <span class="tvk-label">Verse style</span>
-        <div class="tvk-pill-group verse-chips" data-chips="vstyle" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row" data-verse-only>
-        <span class="tvk-label">Verse colours</span>
-        <div class="tvk-pill-group verse-chips" data-chips="vmode" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row">
-        <span class="tvk-label">Live backdrop</span>
-        <div class="tvk-pill-group verse-chips" data-chips="scene" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row">
         <span class="tvk-label">Animation</span>
         <select class="pill-select" id="tvk-anim" style="display:none">
           <option value="smooth">Smooth</option>
@@ -3011,6 +3025,8 @@
         </div>
         <input type="range" class="pill-range" id="tvk-speed" min="150" max="900" step="25" value="900">
       </div>
+      </details>
+      <details class="tvk-sec"><summary>Visualizer</summary>
       <div class="tvk-row tvk-row-toggle">
         <span class="tvk-label">No-lyrics visualizer</span>
         <button type="button" class="effect-switch-btn active" id="btn-tvk-visualizer"><span class="thumb"></span></button>
@@ -3026,6 +3042,7 @@
         </div>
         <input type="range" class="pill-range" id="tvk-vis-opacity" min="10" max="100" step="5" value="85">
       </div>
+      </details>
       <div class="tvk-actions">
         <button type="button" id="btn-tvk-reset">Reset</button>
       </div>

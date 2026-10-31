@@ -11,6 +11,15 @@
 
 ---
 
+## What's new in 1.2.1
+
+- **Live wallpaper (macOS).** Settings, Live backdrop: draw the backdrop as your desktop wallpaper on every screen, behind your icons and windows, moving with the music. (macOS does not allow apps to draw on the lock screen.)
+- **Better Live backdrop.** Two new lit 3D voxel scenes (Voxel city, Voxel dunes) next to the dotted and flat ones, all in the cover's colours.
+- **Verse lyrics.** Word-by-word lyrics in eight styles (Reel, Glide, Elastic, Cascade, Orbit, Surge, Echo, Halo) with colour harmonies from the cover.
+- **Lyrics in time with what you hear.** The lyric clock allows for output delay (Bluetooth), the next song's lyrics are fetched ahead, and each song has its own timing nudge.
+- **One-time YouTube Music login.** Gaane refreshes the session itself like a browser does and never signs you out on a hiccup. Connect from a private window and close it afterwards.
+- **A tidier ambient settings panel:** scrolls, with collapsible groups and smaller buttons.
+
 ## What's new in 1.2
 
 - **Word-by-word lyrics from many sources.** Gaane asks lrc.red, BiniLyrics, LyricsPlus, BetterLyrics, Unison and LRCLIB at once and uses the best answer, preferring lyrics timed to each word. Fixed lyrics that got stuck on one line when a source sent unsynced text.

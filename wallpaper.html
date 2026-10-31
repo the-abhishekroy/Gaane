@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #050507; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<script src="live-backdrop.js"></script>
+<script>
+(() => {
+  // Gaane's live wallpaper: the Live backdrop drawn behind the desktop icons, fed by the player's audio.
+  const bd = GaaneBackdrop.create();
+  if (!bd) return;
+  document.body.appendChild(bd.canvas);
+  let bands = new Array(28).fill(0), palette = [], lastFrame = 0;
+  bd.setSource({ bands: () => (performance.now() - lastFrame > 2500 ? new Array(28).fill(0) : bands), palette: () => palette });
+  bd.setQuality(30, 0.75);
+  window.wallpaper.onConfig((c) => { if (c && GaaneBackdrop.SCENES.includes(c.scene)) bd.setScene(c.scene); });
+  window.wallpaper.onFrame((d) => {
+    if (!d) return;
+    lastFrame = performance.now();
+    if (Array.isArray(d.bands)) bands = d.bands;
+    if (Array.isArray(d.palette)) palette = d.palette;
+  });
+  bd.start();
+  window.wallpaper.ready();
+})();
+</script>
+</body>
+</html>

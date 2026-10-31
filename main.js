@@ -420,6 +420,58 @@ function runGUI() {
   app.on('browser-window-blur', () => setTimeout(updateEdgeOverlay, 50));
   app.on('before-quit', () => { if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.destroy(); });
 
+  // Live wallpaper (macOS): the Live backdrop drawn at the desktop window level on every screen, above the system
+  // wallpaper and below the desktop icons and every app window. It is click-through and follows you across desktops.
+  // (macOS does not let any app draw on the lock screen, so that part stays with the system wallpaper.)
+  const wallpaperWins = new Map();   // display id -> window
+  let wallpaperCfg = { on: false, scene: 'aurora' };
+  function syncWallpaperWindows() {
+    if (process.platform !== 'darwin') return;
+    const wantOn = !!wallpaperCfg.on;
+    if (!wantOn) {
+      for (const w of wallpaperWins.values()) { try { if (!w.isDestroyed()) w.destroy(); } catch (_) {} }
+      wallpaperWins.clear();
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setBackgroundThrottling(true); } catch (_) {}
+      return;
+    }
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setBackgroundThrottling(false); } catch (_) {}
+    const displays = screen.getAllDisplays();
+    const ids = new Set(displays.map((d) => d.id));
+    for (const [id, w] of wallpaperWins) { if (!ids.has(id)) { try { if (!w.isDestroyed()) w.destroy(); } catch (_) {} wallpaperWins.delete(id); } }
+    for (const d of displays) {
+      let w = wallpaperWins.get(d.id);
+      if (w && !w.isDestroyed()) { w.setBounds(d.bounds); continue; }
+      w = new BrowserWindow({
+        x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
+        frame: false, transparent: false, backgroundColor: '#050507', hasShadow: false, resizable: false, movable: false,
+        focusable: false, skipTaskbar: true, show: false, fullscreenable: false, enableLargerThanScreen: true, type: 'panel',
+        webPreferences: { preload: path.join(__dirname, 'wallpaper-preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+      });
+      w.setIgnoreMouseEvents(true);
+      w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false, skipTransformProcessType: true });
+      // kCGDesktopWindowLevel: above the wallpaper, below the icons
+      try { w.setAlwaysOnTop(true, 'normal', -2147483623); } catch (_) {}
+      w.webContents.on('did-finish-load', () => { try { w.webContents.send('wallpaper-config', wallpaperCfg); } catch (_) {} });
+      w.once('ready-to-show', () => { try { w.showInactive(); } catch (_) {} });
+      w.loadFile(path.join(__dirname, 'wallpaper.html'));
+      wallpaperWins.set(d.id, w);
+    }
+  }
+  ipcMain.on('wallpaper-config', (e, cfg) => {
+    wallpaperCfg = { on: !!(cfg && cfg.on), scene: (cfg && cfg.scene) || 'aurora' };
+    syncWallpaperWindows();
+    for (const w of wallpaperWins.values()) { try { if (!w.isDestroyed()) w.webContents.send('wallpaper-config', wallpaperCfg); } catch (_) {} }
+  });
+  ipcMain.on('wallpaper-frame', (e, d) => {
+    for (const w of wallpaperWins.values()) { try { if (!w.isDestroyed()) w.webContents.send('wallpaper-frame', d); } catch (_) {} }
+  });
+  app.whenReady().then(() => {
+    screen.on('display-added', syncWallpaperWindows);
+    screen.on('display-removed', syncWallpaperWindows);
+    screen.on('display-metrics-changed', syncWallpaperWindows);
+  });
+  app.on('before-quit', () => { for (const w of wallpaperWins.values()) { try { if (!w.isDestroyed()) w.destroy(); } catch (_) {} } });
+
   // Pinned mini player (Now Playing card): a small always-on-top window that mirrors playback.
   let miniWin = null;
   let miniCompact = false;

@@ -8070,3 +8070,18 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 .vd-echo { position: absolute; left: 0; top: 0; font-size: var(--hf, 100px); font-weight: 800; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; color: transparent; -webkit-text-stroke: 2px var(--vhi, #fff); transform: translate(-50%, -50%); }
 .verse-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .verse-chips .tvk-pill-btn { flex: 0 0 auto; }
+
+/* Ambient settings panel: scrolls, collapsible groups, smaller controls */
+.tvk-panel { width: 316px; max-height: calc(100vh - 96px); overflow-y: auto; overscroll-behavior: contain; gap: 6px; padding: 10px 12px 12px; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.28) transparent; }
+.tvk-panel::-webkit-scrollbar { width: 8px; }
+.tvk-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.28); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.tvk-sec { border-radius: 14px; background: rgba(255,255,255,0.04); padding: 0 10px; }
+.tvk-sec > summary { list-style: none; cursor: pointer; padding: 9px 2px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.85; display: flex; align-items: center; justify-content: space-between; }
+.tvk-sec > summary::-webkit-details-marker { display: none; }
+.tvk-sec > summary::after { content: ''; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .2s; opacity: .7; margin-right: 4px; }
+.tvk-sec[open] > summary::after { transform: rotate(-135deg); }
+.tvk-sec[open] { padding-bottom: 8px; }
+.tvk-sec .tvk-row { margin-top: 8px; }
+.tvk-panel .verse-chips { gap: 4px; }
+.tvk-panel .verse-chips .tvk-pill-btn { flex: 0 0 auto; font-size: 11px; padding: 4px 9px; line-height: 1.3; border-radius: 999px; }
+.tvk-panel .tvk-label { font-size: 12px; }

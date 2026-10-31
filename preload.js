@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setFullscreen: (v) => ipcRenderer.send('window-set-fullscreen', !!v),
   setEdgeOverlay: (v) => ipcRenderer.send('edge-overlay', !!v),
   sendEdgeFrame: (d) => ipcRenderer.send('edge-frame', d),
+  setWallpaper: (cfg) => ipcRenderer.send('wallpaper-config', cfg),
+  sendWallpaperFrame: (d) => ipcRenderer.send('wallpaper-frame', d),
   openMini: () => ipcRenderer.send('mini-open'),
   sendMiniState: (d) => ipcRenderer.send('mini-state', d),
   onMiniCommand: (cb) => ipcRenderer.on('mini-command', (e, d) => cb(d)),
