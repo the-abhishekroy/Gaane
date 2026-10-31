@@ -24,7 +24,7 @@ float band(float x){ // x 0..1 across the spectrum, linear interpolation between
   return mix(a, b, fr);
 }
 vec3 pal(float t){ t = clamp(t, 0.0, 1.0) * 3.0; return t < 1.0 ? mix(uC0, uC1, t) : t < 2.0 ? mix(uC1, uC2, t - 1.0) : mix(uC2, uC3, t - 2.0); }
-vec3 vignette(vec3 c, vec2 uv){ float d = length(uv - 0.5); return c * (1.0 - 0.38 * smoothstep(0.55, 1.15, d)); }
+vec3 vignette(vec3 c, vec2 uv){ float d = length(uv - 0.5); return c * (1.0 - 0.18 * smoothstep(0.6, 1.3, d)); }
 `;
 
   const FRAGS = {

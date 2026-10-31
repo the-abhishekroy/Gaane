@@ -538,6 +538,13 @@
                 </svg>
                 <span>Banners</span>
               </button>
+              <button class="settings-nav-btn" data-cat="backdrop">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>
+                  <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>
+                </svg>
+                <span>Live backdrop</span>
+              </button>
               <button class="settings-nav-btn" data-cat="playback">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="9"/>
@@ -1073,6 +1080,19 @@
             </div>
 
             <div class="setting-item">
+              <div class="setting-item-top">
+                <span class="setting-name">Cover background brightness</span>
+                <span class="setting-value" id="val-cover-bg-brightness">45%</span>
+              </div>
+              <input type="range" class="pill-range" id="slider-cover-bg-brightness" min="5" max="100" step="5" value="45">
+              <div class="setting-hints"><span>5%</span><span>50%</span><span>100%</span></div>
+            </div>
+                </div>
+              </div>
+
+              <div class="settings-section" data-cat="backdrop">
+                <div class="m3-group">
+            <div class="setting-item">
               <div class="setting-item-top" style="align-items: center;">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span class="setting-name">Live backdrop</span>
@@ -1094,12 +1114,24 @@
             </div>
 
             <div class="setting-item">
-              <div class="setting-item-top">
-                <span class="setting-name">Cover background brightness</span>
-                <span class="setting-value" id="val-cover-bg-brightness">45%</span>
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Lyrics view in ambient mode</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Classic scrolls all the lines. Verse shows one very large line and each word rises into place as it is sung.</span>
+                </div>
               </div>
-              <input type="range" class="pill-range" id="slider-cover-bg-brightness" min="5" max="100" step="5" value="45">
-              <div class="setting-hints"><span>5%</span><span>50%</span><span>100%</span></div>
+              <div class="backdrop-pills" id="settings-verse-group">
+                <button type="button" class="backdrop-pill" data-verse="0">Classic</button>
+                <button type="button" class="backdrop-pill" data-verse="1">Verse</button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Where to see them</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Open ambient mode with the expand button on the playing screen or the F key. Inside it, the two buttons at the top switch the backdrop and Verse quickly.</span>
+                </div>
+              </div>
             </div>
                 </div>
               </div>
@@ -2843,6 +2875,12 @@
         <line x1="8" y1="9" x2="16" y2="9"></line>
         <line x1="8" y1="13" x2="13" y2="13"></line>
       </svg>
+    </button>
+    <button class="tv-karaoke-close" id="btn-tvk-backdrop" title="Live backdrop: change scene" aria-label="Live backdrop">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>
+    </button>
+    <button class="tv-karaoke-close" id="btn-tvk-verse" title="Verse lyrics view" aria-label="Verse lyrics view">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
     </button>
     <button class="tv-karaoke-close" id="btn-tvk-settings" title="Customize lyrics" aria-label="Customize lyrics">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

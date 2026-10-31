@@ -8046,3 +8046,9 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 }
 .verse-word.now { text-shadow: 0 0 0.5em rgba(255, 255, 255, 0.55); }
 .verse-pre .verse-cur { opacity: 0.4; }
+
+#btn-tvk-backdrop { right: 184px; }
+#btn-tvk-verse { right: 236px; }
+#btn-tvk-backdrop.off, #btn-tvk-verse.off { opacity: 1; background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.45); }
+.tvk-toast { position: absolute; top: 84px; right: 28px; z-index: 11; padding: 8px 14px; border-radius: 999px; font-size: 13px; color: #fff; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); opacity: 0; transition: opacity .25s; pointer-events: none; }
+.tvk-toast.show { opacity: 1; }

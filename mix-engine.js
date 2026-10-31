@@ -167,6 +167,9 @@
     } catch (err) { abort(); return false; }
     ownStart = true;
     host.state._isNaturalEnding = true;
+    // the outgoing song is still the one you hear for the first half of the blend: keep screen and lyrics on it
+    host.state._deferTrackUI = true;
+    host.state._lyricsClock = () => (ghost ? ghost.currentTime : 0);
     try { host.playNext(); } finally { host.state._isNaturalEnding = false; ownStart = false; }
     phase = 'blending';
     plan = p;
@@ -177,6 +180,8 @@
   }
 
   let blendRunning = false;
+  let uiTimer = null;
+  function flushUI() { clearTimeout(uiTimer); uiTimer = null; if (host && host.flushTrackUI) host.flushTrackUI(); }
   const mod = (x, m) => ((x % m) + m) % m;
 
   // Put the incoming song's beats on the outgoing song's beats. Done while the incoming deck is still silent.
@@ -233,6 +238,8 @@
         if (k >= 1) { clearInterval(glideTimer); glideTimer = null; try { a.playbackRate = baseRate; } catch (err) {} }
       }, 200);
     }
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(flushUI, Math.max(300, len * 500));       // midpoint of the blend, as BitChord does
     lastMix = Object.assign({}, plan, { from: outId, to: cur && cur.id });
     clearTimeout(blendFinish);
     blendFinish = setTimeout(finishBlend, len * 1000 + 250);
@@ -240,6 +247,7 @@
 
   function finishBlend() {
     clearTimeout(blendFinish); blendFinish = null;
+    flushUI();
     try { if (ghost) ghost.pause(); } catch (e) {}
     const e = eng(); if (e && e.resetDecks) e.resetDecks();
     blendRunning = false; phase = 'idle'; plan = null; planFor = '';
@@ -247,6 +255,7 @@
 
   function abort() {
     clearTimeout(blendFinish); blendFinish = null;
+    flushUI();
     clearInterval(glideTimer); glideTimer = null;
     try { if (ghost) ghost.pause(); } catch (e) {}
     const e = eng(); if (e && e.resetDecks) e.resetDecks();

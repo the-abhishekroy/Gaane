@@ -7,6 +7,7 @@ const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const { LIBRARY_DIR, DATA_DIR, resolveBinary, tutorialDone, markTutorialDone, readStartupConfig, writeStartupConfig } = require('./platform');
 const { getLauncherInfo, installLauncher } = require('./launcher');
+const { parseNotches, notchFor: edgeNotchFor } = require('./edge-notch');
 const { getSystemAudioOutputInfo } = require('./audio-output');
 const { log, tail, LOG_DIR } = require('./logger');
 const logger = { log, tail, LOG_DIR, error: (msg, err) => log('ERROR', `${msg}: ${err && err.message ? err.message : err}`) };
@@ -324,27 +325,37 @@ function runGUI() {
   // Edge light overlay: a click-through transparent window over the whole display (notch included)
   // that draws the music-reactive border light while ambient mode is open.
   let edgeOverlay = null;
-  let edgeNotch = null;
-  // Exact notch position from macOS (NSScreen auxiliary areas), so the light keeps an even gap on both sides.
-  app.whenReady().then(() => {
+  // Only a MacBook's built-in screen has a notch. Notches are read from macOS per display (NSScreen), keyed by
+  // the display id, so an external monitor, a desktop Mac, Windows and Linux never get one.
+  const edgeNotches = new Map();     // display id -> { x0, x1, h } in that display's own coordinates
+  let edgeSentNotchKey = null;
+  function loadEdgeNotches() {
     if (process.platform !== 'darwin') return;
-    const script = "ObjC.import('AppKit');const s=$.NSScreen.screens.objectAtIndex(0);const f=s.frame;const l=s.auxiliaryTopLeftArea;const r=s.auxiliaryTopRightArea;JSON.stringify({w:f.size.width,top:s.safeAreaInsets.top,leftW:l.size.width,rightW:r.size.width});";
+    const script = "ObjC.import('AppKit');const out=[];const arr=$.NSScreen.screens;for(let i=0;i<arr.count;i++){const s=arr.objectAtIndex(i);const f=s.frame;const l=s.auxiliaryTopLeftArea;const r=s.auxiliaryTopRightArea;const num=ObjC.unwrap(s.deviceDescription.objectForKey($('NSScreenNumber')));out.push({id:num,w:f.size.width,top:s.safeAreaInsets.top,leftW:l.size.width,rightW:r.size.width});}JSON.stringify(out);";
     execFile('/usr/bin/osascript', ['-l', 'JavaScript', '-e', script], { timeout: 8000 }, (err, out) => {
       try {
         if (err) throw err;
-        const n = JSON.parse(String(out).trim());
-        if (n.top > 0 && n.leftW > 0 && n.rightW > 0 && n.leftW + n.rightW < n.w) {
-          edgeNotch = { x0: n.leftW, x1: n.w - n.rightW, h: n.top };
-          if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
-        }
-      } catch (e) {
-        try {
-          const d = screen.getPrimaryDisplay();
-          const bar = d.workArea.y - d.bounds.y;
-          if (bar >= 32) { const nw = Math.round(d.bounds.width * 0.122); edgeNotch = { x0: Math.round((d.bounds.width - nw) / 2), x1: Math.round((d.bounds.width + nw) / 2), h: bar }; }
-        } catch (_) {}
-      }
+        edgeNotches.clear();
+        for (const [id, notch] of parseNotches(JSON.parse(String(out).trim()))) edgeNotches.set(id, notch);
+      } catch (e) { edgeNotches.clear(); }   // unknown means no notch, never a guess
+      edgeSentNotchKey = null;
+      sendEdgeConfig(screen.getPrimaryDisplay());
     });
+  }
+  const notchFor = (display) => edgeNotchFor(edgeNotches, display);
+  function sendEdgeConfig(display) {
+    if (!edgeOverlay || edgeOverlay.isDestroyed()) return;
+    const notch = notchFor(display);
+    const key = display ? `${display.id}:${notch ? notch.x0 + ',' + notch.x1 + ',' + notch.h : 'none'}` : 'none';
+    if (key === edgeSentNotchKey) return;
+    edgeSentNotchKey = key;
+    edgeOverlay.webContents.send('edge-config', { notch });
+  }
+  app.whenReady().then(() => {
+    loadEdgeNotches();
+    screen.on('display-added', loadEdgeNotches);
+    screen.on('display-removed', loadEdgeNotches);
+    screen.on('display-metrics-changed', loadEdgeNotches);
   });
 
   let edgeWanted = false;
@@ -358,9 +369,11 @@ function runGUI() {
       if (edgeOverlay && !edgeOverlay.isDestroyed() && edgeOverlay.isVisible()) edgeOverlay.hide();
       return;
     }
-    const b = screen.getDisplayMatching(win.getBounds()).bounds;
+    const disp = screen.getDisplayMatching(win.getBounds());
+    const b = disp.bounds;
     ensureEdgeOverlay();
     edgeOverlay.setBounds(b);
+    sendEdgeConfig(disp);          // the notch is drawn only when this very display has one
     edgeOverlay.showInactive();
   }
 
@@ -385,7 +398,8 @@ function runGUI() {
     }
     edgeOverlay.loadFile(path.join(__dirname, 'edge-overlay.html'));
     edgeOverlay.webContents.on('did-finish-load', () => {
-      if (edgeOverlay && !edgeOverlay.isDestroyed()) edgeOverlay.webContents.send('edge-config', { notch: edgeNotch });
+      edgeSentNotchKey = null;
+      sendEdgeConfig(screen.getDisplayMatching(edgeOverlay.getBounds()));
     });
     return edgeOverlay;
   }

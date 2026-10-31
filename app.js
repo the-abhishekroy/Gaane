@@ -3009,10 +3009,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('devsize_history', JSON.stringify(state.history));
     if (state.currentView === 'history') renderHistoryView();
 
-    updateNowPlayingUI(track);
-    updatePlayPauseButton(false, true);
-
-    loadSyncedLyrics(track.title, track.artist, currentToken);
+    const applyTrackUI = () => {
+      updateNowPlayingUI(track);
+      updatePlayPauseButton(false, true);
+      loadSyncedLyrics(track.title, track.artist, currentToken);
+    };
+    if (state._deferTrackUI) {
+      // Automix hand-over: the screen, Now Playing and lyrics move to this song at the middle of the blend
+      state._pendingTrackUI = applyTrackUI;
+    } else {
+      applyTrackUI();
+    }
 
     try {
       if (track.platform === 'local') {
@@ -3726,14 +3733,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const idx = parseInt(lineEl.id.replace('lyric-line-', ''), 10);
     const start = getLineStartTime(idx);
     const dur = Math.max(0.5, getLineEndTime(idx) - start);
-    const t = el.nativeAudio.currentTime + (state.isCustomLyrics ? 0.25 : 0);
+    const t = lyricsNow() + (state.isCustomLyrics ? 0.25 : 0);
     const tau = Math.min(1, Math.max(0, (t - start) / dur));
 
     const text = fill.textContent || '';
     const lw = state.syncedLyrics[idx] && state.syncedLyrics[idx].words;
     if (lw && lw.length) {
       const n = Array.from(text).length;
-      const tt = el.nativeAudio.currentTime;
+      const tt = lyricsNow();
       let chars = 0;
       if (tt >= lw[lw.length - 1].e) chars = n;
       else {
@@ -3816,7 +3823,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     return Math.max(0, top - (parentH / 2) + (lineH / 2));
   }
 
+  // While Automix hands the song over, the lyrics keep following the outgoing song's clock (mid-blend they switch).
+  function lyricsNow() { return state._lyricsClock ? state._lyricsClock() : (el.nativeAudio ? el.nativeAudio.currentTime : 0); }
+
   function updateSyncedLyricsHighlight(currentTime) {
+    if (state._lyricsClock) currentTime = state._lyricsClock();
     if (state.syncedLyrics.length === 0 || !state.isWindowVisible) return;
     let activeIndex = -1;
 
@@ -11130,7 +11141,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       playNext: () => playNext(),
       base: () => `http://127.0.0.1:${state.serverPort}`,
       hls: () => hlsInstance,
-      queueChanged: () => { updateQueueBadge(); if (state.currentView === 'queue') renderQueueView(); }
+      queueChanged: () => { updateQueueBadge(); if (state.currentView === 'queue') renderQueueView(); },
+      flushTrackUI: () => { state._deferTrackUI = false; state._lyricsClock = null; const f = state._pendingTrackUI; state._pendingTrackUI = null; if (f) f(); }
     });
     const cfg = () => GaaneMix.settings;
     const slider = document.getElementById('slider-crossfade'), val = document.getElementById('val-crossfade');
@@ -15247,7 +15259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const a = el.nativeAudio;
       const L = state.syncedLyrics || [];
       if (!a || !L.length) { if (shownIdx !== -1) { shownIdx = -1; build(-1); } return; }
-      const t = a.currentTime + (state.isCustomLyrics ? 0.25 : 0);
+      const t = lyricsNow() + (state.isCustomLyrics ? 0.25 : 0);
       let idx = -1;
       for (let i = 0; i < L.length; i++) { const lt = lineTime(L[i]); if (lt >= 0 && t >= lt) idx = i; else if (lt > t) break; }
       if (idx !== shownIdx) { shownIdx = idx; build(idx); stage.classList.toggle('verse-pre', idx < 0); }
@@ -15263,17 +15275,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     function apply() {
       const tv = el.tvKaraoke;
       if (tv) tv.classList.toggle('verse-on', on);
-      document.querySelectorAll('#tvk-verse-group .tvk-pill-btn').forEach((b) => b.classList.toggle('active', (b.dataset.verse === '1') === on));
+      document.querySelectorAll('#tvk-verse-group .tvk-pill-btn, #settings-verse-group .backdrop-pill').forEach((b) => b.classList.toggle('active', (b.dataset.verse === '1') === on));
+      const qb = document.getElementById('btn-tvk-verse');
+      if (qb) qb.classList.toggle('off', !on);
       if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); }
     }
-    document.querySelectorAll('#tvk-verse-group .tvk-pill-btn').forEach((b) => b.addEventListener('click', () => {
-      on = b.dataset.verse === '1';
-      localStorage.setItem('gaane_verse', on ? '1' : '0');
-      apply();
-    }));
+    const setOn = (v) => { on = !!v; localStorage.setItem('gaane_verse', on ? '1' : '0'); apply(); };
+    document.querySelectorAll('#tvk-verse-group .tvk-pill-btn, #settings-verse-group .backdrop-pill').forEach((b) => b.addEventListener('click', () => setOn(b.dataset.verse === '1')));
     setInterval(() => { if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); } if (el.tvKaraoke) el.tvKaraoke.classList.toggle('verse-on', on); }, 500);
     apply();
-    return { apply };
+    return { apply, toggle: () => { setOn(!on); return on; }, isOn: () => on };
   })();
 
   // Live backdrop ------------------------------------------------------------------------------------------
@@ -15339,6 +15350,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       cfg.where = b.dataset.where; save(); paintUI(); place();
     }));
     paintUI();
+    const toast = (msg) => {
+      const tv = el.tvKaraoke; if (!tv) return;
+      let t = tv.querySelector('.tvk-toast');
+      if (!t) { t = document.createElement('div'); t.className = 'tvk-toast'; tv.appendChild(t); }
+      t.textContent = msg; t.classList.add('show');
+      clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1400);
+    };
+    const NAMES = { off: 'Backdrop off', aurora: 'Aurora', voxels: 'Voxel wall', contours: 'Contours', ripples: 'Ripples' };
+    const quick = document.getElementById('btn-tvk-backdrop');
+    const paintQuick = () => { if (quick) quick.classList.toggle('off', cfg.scene === 'off'); };
+    if (quick) quick.addEventListener('click', () => {
+      const order = ['off', 'aurora', 'voxels', 'contours', 'ripples'];
+      cfg.scene = order[(order.indexOf(cfg.scene) + 1) % order.length];
+      if (cfg.scene !== 'off') bd.setScene(cfg.scene);
+      save(); paintUI(); paintQuick(); place(); toast(NAMES[cfg.scene]);
+    });
+    const quickVerse = document.getElementById('btn-tvk-verse');
+    if (quickVerse) quickVerse.addEventListener('click', () => { if (verseView) toast(verseView.toggle() ? 'Verse lyrics' : 'Classic lyrics'); });
+    paintQuick();
     setInterval(place, 600);
     return { bd, cfg, place };
   })();
