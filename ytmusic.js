@@ -130,6 +130,8 @@ function parseDuration(text) {
   return text.trim().split(':').map(Number).reduce((a, n) => a * 60 + n, 0);
 }
 
+const isVideoType = (t) => !!t && t !== 'MUSIC_VIDEO_TYPE_ATV';
+
 function makeTrack(id, title, artist, duration, thumbnail, album) {
   return {
     id, title, artist: artist || 'Unknown Artist', duration: duration || 180, album: album || '',
@@ -164,7 +166,10 @@ function parseListItem(r) {
   const thumbs = r.thumbnail && r.thumbnail.musicThumbnailRenderer && r.thumbnail.musicThumbnailRenderer.thumbnail && r.thumbnail.musicThumbnailRenderer.thumbnail.thumbnails;
   if (!title) return null;
   const albumGuess = runsText(cols[2] && cols[2].musicResponsiveListItemFlexColumnRenderer && cols[2].musicResponsiveListItemFlexColumnRenderer.text).trim() || (segs.length > 2 ? segs[1] : '');
-  return makeTrack(videoId, title, artist.replace(/\s*-\s*Topic$/i, '').trim(), duration, bestThumb(thumbs, videoId), looksLikeAlbum(albumGuess) ? albumGuess : '');
+  const track = makeTrack(videoId, title, artist.replace(/\s*-\s*Topic$/i, '').trim(), duration, bestThumb(thumbs, videoId), looksLikeAlbum(albumGuess) ? albumGuess : '');
+  const vt = overlay && overlay.playNavigationEndpoint && overlay.playNavigationEndpoint.watchEndpoint && overlay.playNavigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs && overlay.playNavigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig && overlay.playNavigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig.musicVideoType;
+  if (isVideoType(vt)) track.isVideo = true;
+  return track;
 }
 
 function parseTwoRowItemInner(r) {
@@ -296,7 +301,10 @@ function parsePanelTracks(json) {
     const r = wrap.playlistPanelVideoRenderer || (wrap.playlistPanelVideoWrapperRenderer && wrap.playlistPanelVideoWrapperRenderer.primaryRenderer && wrap.playlistPanelVideoWrapperRenderer.primaryRenderer.playlistPanelVideoRenderer);
     if (!r || !r.videoId) continue;
     const segs = splitBylineRuns(r.longBylineText && r.longBylineText.runs);
-    out.push(makeTrack(r.videoId, runsText(r.title), (segs[0] || '').replace(/\s*-\s*Topic$/i, ''), parseDuration(runsText(r.lengthText)), bestThumb(r.thumbnail && r.thumbnail.thumbnails, r.videoId), looksLikeAlbum(segs[1]) ? segs[1] : ''));
+    const pt = makeTrack(r.videoId, runsText(r.title), (segs[0] || '').replace(/\s*-\s*Topic$/i, ''), parseDuration(runsText(r.lengthText)), bestThumb(r.thumbnail && r.thumbnail.thumbnails, r.videoId), looksLikeAlbum(segs[1]) ? segs[1] : '');
+    const mt = r.navigationEndpoint && r.navigationEndpoint.watchEndpoint && r.navigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs && r.navigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig && r.navigationEndpoint.watchEndpoint.watchEndpointMusicSupportedConfigs.watchEndpointMusicConfig.musicVideoType;
+    if (isVideoType(mt)) pt.isVideo = true;
+    out.push(pt);
   }
   return out;
 }
@@ -435,7 +443,7 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist']);
+const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist', '/api/ytm-suggest']);
 
 async function handleRoute(parsedUrl, req, res) {
   const p = parsedUrl.pathname;
@@ -462,6 +470,11 @@ async function handleRoute(parsedUrl, req, res) {
         return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music session expired' });
       }
       return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, chips: data.chips, wave: waveTracks(data.sections) });
+    }
+    if (p === '/api/ytm-suggest') {
+      const q = String(parsedUrl.query.q || '').trim().slice(0, 120);
+      if (!q) return sendJson(res, 200, { success: true, suggestions: [] });
+      return sendJson(res, 200, { success: true, suggestions: await searchSuggestions(q) });
     }
     if (p === '/api/ytm-tab') {
       const tab = String(parsedUrl.query.tab || '');
@@ -493,4 +506,29 @@ async function handleRoute(parsedUrl, req, res) {
   return sendJson(res, 404, { success: false, error: 'not found' });
 }
 
-module.exports = { connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
+// What YouTube Music offers while typing (get_search_suggestions), cached briefly per query.
+const suggestCache = new Map();
+async function searchSuggestions(q) {
+  const key = q.toLowerCase();
+  const hit = suggestCache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.list;
+  const json = await ytmRequest('music/get_search_suggestions', { input: q });
+  const out = [];
+  (function walk(n) {
+    if (Array.isArray(n)) n.forEach(walk);
+    else if (n && typeof n === 'object') {
+      const r = n.searchSuggestionRenderer;
+      if (r && r.suggestion && Array.isArray(r.suggestion.runs)) {
+        const text = r.suggestion.runs.map((x) => x.text).join('').trim();
+        if (text && !out.includes(text)) out.push(text);
+      }
+      Object.values(n).forEach(walk);
+    }
+  })(json);
+  const list = out.slice(0, 8);
+  if (suggestCache.size > 200) suggestCache.clear();
+  suggestCache.set(key, { at: Date.now(), list });
+  return list;
+}
+
+module.exports = { searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };

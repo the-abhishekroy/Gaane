@@ -25,6 +25,7 @@
   let W = 0, H = 0, dpr = 1, path = null, segs = [];
   let ring, rctx, glowA, gaCtx, glowB, gbCtx, live, lvCtx, inten, inCtx, wave, wvCtx, wave2, wv2Ctx;
   let angle = 0;
+  let colourPhase = 0;
   let centreS = 0.15;                    // position of the notch / top centre along the outline (0..1)
 
   const layer = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; };
@@ -175,23 +176,29 @@
     flash = Math.max(flash * 0.82, Math.max(0, low - prevLow) * 4);
     prevLow = low;
 
-    angle += dt * (0.25 + 2.2 * high + 1.2 * mid + 1.5 * flash);
-    // only the cover's own colours, each held for a stretch with a short blend into the next
+    angle += dt * (0.18 + 1.1 * high + 0.7 * mid + 0.9 * flash);
+    // One colour flowing into the next. The ring only ever shows a blend of two neighbouring cover colours, and that
+    // pair itself slides along the palette over time (faster with the music), so there are no separate colour blocks.
+    colourPhase += dt * (0.08 + 0.55 * energy + 0.9 * flash);
     const lift = 0.14 * energy + 0.06 * flash;
-    const pal = palette.map((c) => `rgb(${(c[0] + (255 - c[0]) * lift) | 0},${(c[1] + (255 - c[1]) * lift) | 0},${(c[2] + (255 - c[2]) * lift) | 0})`);
+    let cols = palette.length > 1 ? palette : [palette[0], palette[0].map((v) => Math.min(255, v + (255 - v) * 0.35))];
+    const np = cols.length;
+    const ip = Math.floor(colourPhase) % np, fp = colourPhase - Math.floor(colourPhase);
+    const ease = fp * fp * (3 - 2 * fp);
+    const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    const cA = mixc(cols[ip], cols[(ip + 1) % np], ease);
+    const cB = mixc(cols[(ip + 1) % np], cols[(ip + 2) % np], ease);
+    const STOPS = 36;
+    const stops = [];
+    for (let i = 0; i <= STOPS; i++) {
+      const w = 0.5 + 0.5 * Math.cos((i / STOPS) * Math.PI * 2);
+      const w2 = w * w * (3 - 2 * w);
+      const c = mixc(cA, cB, w2);
+      stops.push(`rgb(${(c[0] + (255 - c[0]) * lift) | 0},${(c[1] + (255 - c[1]) * lift) | 0},${(c[2] + (255 - c[2]) * lift) | 0})`);
+    }
     const sweep = (c) => {
       const g = c.createConicGradient(angle, W / 2, H / 2);
-      const seq = [];
-      for (let rep = 0; rep < 2; rep++) for (const col of pal) seq.push(col);
-      const n = seq.length, plate = 0.88;
-      const first = seq[0];
-      g.addColorStop(0, first);
-      for (let i = 0; i < n; i++) {
-        const t0 = (i + (1 - plate) / 2) / n, t1 = (i + 1 - (1 - plate) / 2) / n;
-        g.addColorStop(Math.min(1, t0), seq[i]);
-        g.addColorStop(Math.min(1, t1), seq[i]);
-      }
-      g.addColorStop(1, first);
+      for (let i = 0; i <= STOPS; i++) g.addColorStop(i / STOPS, stops[i]);
       return g;
     };
 

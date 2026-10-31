@@ -296,37 +296,47 @@
   // ---------------------------------------------------------------- spatial audio
   function applySpatial() { const e = eng(); if (e && e.setSpatial && e.graphInitialized) e.setSpatial(cfg.spatial); }
 
-  // ---------------------------------------------------------------- autoplay
-  const radioSeen = new Set();
-  async function extendQueue() {
-    if (!cfg.autoplay || !host) return 0;
-    const s = host.state, last = s.currentTrack;
-    if (!last || last.platform === 'local' || !/^[\w-]{11}$/.test(String(last.id || ''))) return 0;
-    if (radioSeen.has(last.id)) return 0;
-    radioSeen.add(last.id);
+  // ---------------------------------------------------------------- autoplay (BitChord's rules)
+  let radioBusy = false;
+  const seedTried = new Set();
+
+  // the YouTube id that seeds the station: the song's own id, or a YouTube Music match for local / SoundCloud songs
+  async function youtubeSeedFor(song) {
+    if (song.platform !== 'local' && /^[\w-]{11}$/.test(String(song.id || ''))) return song.id;
     try {
-      const d = await (await fetch(`${host.base()}/api/ytm-radio?id=${encodeURIComponent(last.id)}`)).json();
-      if (!d.success || !Array.isArray(d.tracks)) return 0;
-      const norm = (t) => `${String(t.title).toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()}|${String(t.artist).toLowerCase().split(/,|&/)[0].trim()}`;
-      const have = new Set(s.queue.map((t) => t.id)); const haveNorm = new Set(s.queue.map(norm));
-      const perArtist = {}; s.queue.slice(-6).forEach((t) => { const a = String(t.artist).toLowerCase(); perArtist[a] = (perArtist[a] || 0) + 1; });
-      const seedArtist = String(last.artist || '').toLowerCase();
-      const fresh = [];
-      for (const t of d.tracks) {
-        if (fresh.length >= 10) break;
-        const a = String(t.artist).toLowerCase(), cap = a === seedArtist ? 4 : 2;
-        if (have.has(t.id) || haveNorm.has(norm(t)) || (perArtist[a] || 0) >= cap) continue;
-        perArtist[a] = (perArtist[a] || 0) + 1; have.add(t.id); haveNorm.add(norm(t));
-        fresh.push(Object.assign({}, t, { autoplay: true }));
-      }
-      if (fresh.length) { s.queue.push(...fresh); if (host.queueChanged) host.queueChanged(); }
-      return fresh.length;
-    } catch (e) { return 0; }
+      const q = `${song.artist || ''} ${song.title || ''}`.trim();
+      if (!q) return null;
+      const d = await (await fetch(`${host.base()}/api/search?q=${encodeURIComponent(q)}&platform=ytmusic&limit=3`)).json();
+      const hit = d && d.success && d.tracks && d.tracks.find((t) => /^[\w-]{11}$/.test(String(t.id || '')));
+      return hit ? hit.id : null;
+    } catch (e) { return null; }
   }
+
+  async function extendQueue() {
+    if (!cfg.autoplay || !host || radioBusy || !root.GaaneQueue) return 0;
+    const s = host.state, Q = root.GaaneQueue;
+    const last = s.queue && s.queue[s.queue.length - 1];
+    if (!last) return 0;
+    const key = `${last._eid || last.id}`;
+    if (seedTried.has(key)) return 0;
+    radioBusy = true; seedTried.add(key);
+    try {
+      const seed = await youtubeSeedFor(last);
+      if (!seed) return 0;
+      const videos = !!last.isVideo && seed === last.id;
+      const d = await (await fetch(`${host.base()}/api/ytm-radio?id=${encodeURIComponent(seed)}`)).json();
+      if (!d.success || !Array.isArray(d.tracks)) return 0;
+      const extra = Q.extend(s.queue, d.tracks.filter((t) => t.id !== seed), Q.MAX_QUEUED_AUTOPLAY, videos).map((t) => Q.entry(Object.assign({}, t, { autoplay: true, _source: last._source || '' }), Q.AUTOPLAY));
+      if (extra.length) { s.queue.push(...extra); if (host.queueChanged) host.queueChanged(); }
+      return extra.length;
+    } catch (e) { return 0; } finally { radioBusy = false; }
+  }
+
+  // fewer than three songs left: top the station up
   function maybeExtend() {
     const s = host && host.state;
-    if (!cfg.autoplay || !s || s.isRepeat || s.myWaveActive) return;
-    if (s.queue.length - 1 - s.queueIndex <= 2) extendQueue();
+    if (!s || !root.GaaneQueue || s.myWaveActive) return;
+    if (root.GaaneQueue.needsTopUp(s.queue, s.queueIndex, !!s.repeatMode && s.repeatMode !== 'off', cfg.autoplay)) extendQueue();
   }
 
   // ---------------------------------------------------------------- public api

@@ -444,7 +444,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     isPlaying: false,
     isMuted: localStorage.getItem('riff_muted') === '1',
     volume: savedVolume,
-    isRepeat: localStorage.getItem('riff_repeat') === '1',
+    repeatMode: (() => { const m = localStorage.getItem('gaane_repeat_mode'); return m === 'all' || m === 'one' ? m : (localStorage.getItem('riff_repeat') === '1' ? 'one' : 'off'); })(),
+    isRepeat: (() => { const m = localStorage.getItem('gaane_repeat_mode'); return m === 'one' || (m === null && localStorage.getItem('riff_repeat') === '1'); })(),
     isShuffle: localStorage.getItem('riff_shuffle') === '1',
     isAutoRemix: false,
     myWaveActive: false,
@@ -2960,7 +2961,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.currentTrackContext = context;
     state.currentTrackIndexInContext = startIndex;
 
-    if (queueList) {
+    const oneOff = typeof context === 'string' && (context === 'search' || context === 'oneoff' || context.startsWith('oneoff:'));
+    if (oneOff && window.GaaneQueue) {
+      // a song that is not part of a list: it plays alone and the station plays on from it
+      state.queue = GaaneQueue.buildOneOffQueue(state.queue || [], state.queueIndex, track, typeof context === 'string' && context.startsWith('oneoff:') ? context.slice(7) : 'Search');
+      state.queueIndex = 0;
+      state.queueHistory = [0];
+      state.currentTrack = state.queue[0];
+      track = state.queue[0];
+    } else if (queueList) {
+      if (window.GaaneQueue && context !== 'queue' && startIndex >= 0 && startIndex < queueList.length && isSameTrack(queueList[startIndex], track)) {
+        const built = GaaneQueue.buildContextQueue(state.queue || [], state.queueIndex, queueList, startIndex, typeof context === 'string' ? context : '');
+        queueList = built.timeline;
+        startIndex = built.startIndex;
+      }
       state.queue = [...queueList];
       if (startIndex >= 0 && startIndex < state.queue.length && isSameTrack(state.queue[startIndex], track)) {
         state.queueIndex = startIndex;
@@ -2977,12 +2991,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (existingIndex === -1) {
         state.queue.push(track);
         state.queueIndex = state.queue.length - 1;
+        state.queueHistory = [state.queueIndex];
       } else {
+        // moving inside the queue keeps what has already played (shuffle must not repeat songs)
         state.queueIndex = existingIndex;
+        if (!Array.isArray(state.queueHistory) || !state.queueHistory.length) state.queueHistory = [];
+        recordPlayedIndex(existingIndex);
       }
-      state.queueHistory = [state.queueIndex];
     }
     updateQueueBadge();
+    if (window.GaaneMix) GaaneMix.maybeExtend();
 
     track.playedAt = Date.now();
     state.history = state.history.filter(t => !isSameTrack(t, track));
@@ -3170,7 +3188,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const onlineParam = getAdv('online_lyrics', true) ? '1' : '0';
-      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}`);
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}&duration=${encodeURIComponent((state.currentTrack && state.currentTrack.duration) || (el.nativeAudio && el.nativeAudio.duration) || 0)}&album=${encodeURIComponent((state.currentTrack && state.currentTrack.album) || '')}`);
       const data = await res.json();
 
       if (token !== state.loadToken || (state.currentTrack && (state.currentTrack.title || '') !== title)) return;
@@ -3190,17 +3208,42 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const raw = data.lyrics;
       const lines = raw.split('\n');
+      const srcTag = /^\[src:([^\]|]*)\|?([^\]]*)\]/m.exec(raw);
+      state.lyricsSource = srcTag ? { source: srcTag[1], kind: srcTag[2] || 'synced' } : { source: '', kind: /<\d+:\d+/.test(raw) ? 'word' : /\[\d+:\d+/.test(raw) ? 'line' : 'plain' };
       const parsed = [];
       const lrcRegex = /\[(\d+):(\d+(\.\d+)?)\](.*)/;
 
       for (const line of lines) {
+        if (/^\[[a-z]+:[^\]]*\]\s*$/i.test(line)) continue;
         const match = lrcRegex.exec(line);
         if (match) {
           const min = parseInt(match[1], 10);
           const sec = parseFloat(match[2]);
-          const text = match[4].trim();
+          const rawText = match[4];
+          let text = rawText.trim();
+          let words = null;
+          if (rawText.indexOf('<') >= 0) {
+            // Enhanced LRC: <mm:ss.xx>word — real per-word timings from the lyrics providers.
+            const toks = [...rawText.matchAll(/<(\d+):(\d+(?:\.\d+)?)>([^<]*)/g)];
+            const ws = [];
+            toks.forEach((tk, i) => {
+              const w = tk[3].trim();
+              const start = parseInt(tk[1], 10) * 60 + parseFloat(tk[2]);
+              const nx = toks[i + 1];
+              const end = nx ? parseInt(nx[1], 10) * 60 + parseFloat(nx[2]) : start;
+              if (w) ws.push({ t: w, s: start, e: end });
+            });
+            if (ws.length) {
+              let at = 0;
+              ws.forEach(w => { w.from = at; at += Array.from(w.t).length; w.to = at; at += 1; });
+              words = ws;
+              text = ws.map(w => w.t).join(' ');
+            } else {
+              text = text.replace(/<[^>]+>/g, '').trim();
+            }
+          }
           if (text) {
-            parsed.push({ time: min * 60 + sec, text: text });
+            parsed.push(words ? { time: min * 60 + sec, text: text, words: words } : { time: min * 60 + sec, text: text });
           }
         } else if (line.trim()) {
           parsed.push({ time: -1, text: line.trim() });
@@ -3687,6 +3730,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const tau = Math.min(1, Math.max(0, (t - start) / dur));
 
     const text = fill.textContent || '';
+    const lw = state.syncedLyrics[idx] && state.syncedLyrics[idx].words;
+    if (lw && lw.length) {
+      const n = Array.from(text).length;
+      const tt = el.nativeAudio.currentTime;
+      let chars = 0;
+      if (tt >= lw[lw.length - 1].e) chars = n;
+      else {
+        for (let i = 0; i < lw.length; i++) {
+          const w = lw[i];
+          if (tt < w.s) { chars = w.from; break; }
+          if (tt < Math.max(w.e, w.s + 0.05)) { chars = w.from + (w.to - w.from) * ((tt - w.s) / Math.max(w.e - w.s, 0.05)); break; }
+          chars = w.to;
+        }
+      }
+      fill.style.setProperty('--k', Math.min(1, Math.max(0, chars / Math.max(1, n))).toFixed(4));
+      return;
+    }
     const cache = getLineGradientWeights(lineEl, idx, text);
 
     let k = tau;
@@ -3840,7 +3900,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           const wordSpans = lineEl.querySelectorAll('.lyric-word');
           const totalWords = wordSpans.length;
-          const currentWordIndex = Math.floor(progress * totalWords);
+          const lw = state.syncedLyrics[idx] && state.syncedLyrics[idx].words;
+          let currentWordIndex = Math.floor(progress * totalWords);
+          if (lw && lw.length === totalWords) {
+            currentWordIndex = -1;
+            for (let wi = 0; wi < lw.length; wi++) { if (matchTime >= lw[wi].s) currentWordIndex = wi; }
+          }
 
           wordSpans.forEach((wSpan, wIdx) => {
             if (wIdx < currentWordIndex) {
@@ -5182,8 +5247,35 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
+    const tierOf = (t) => (window.GaaneQueue ? GaaneQueue.tierOf(t) : 'context');
     if (state.isShuffle) {
-      const nextIdx = Math.floor(Math.random() * state.queue.length);
+      // Hand-queued songs keep their order and play first; the rest is shuffled among songs not yet played.
+      let nextIdx = -1;
+      for (let i = state.queueIndex + 1; i < state.queue.length; i++) {
+        if (tierOf(state.queue[i]) === 'user') { nextIdx = i; break; }
+      }
+      if (nextIdx < 0) {
+        const played = new Set(state.queueHistory);
+        const pool = [];
+        for (let i = 0; i < state.queue.length; i++) {
+          if (i !== state.queueIndex && !played.has(i) && tierOf(state.queue[i]) !== 'user') pool.push(i);
+        }
+        if (pool.length) nextIdx = pool[Math.floor(Math.random() * pool.length)];
+        else if (window.GaaneMix && GaaneMix.settings.autoplay && !state._autoplayBusy) {
+          state._autoplayBusy = true;
+          GaaneMix.extendQueue().then((n) => {
+            state._autoplayBusy = false;
+            if (n > 0) playNext();
+          });
+          return;
+        } else if (state.repeatMode === 'all') {
+          state.queueHistory = [state.queueIndex];
+          const again = [];
+          for (let i = 0; i < state.queue.length; i++) if (i !== state.queueIndex) again.push(i);
+          if (again.length) nextIdx = again[Math.floor(Math.random() * again.length)];
+        }
+        if (nextIdx < 0) return;
+      }
       state.queueIndex = nextIdx;
       recordPlayedIndex(nextIdx);
       playTrack(state.queue[nextIdx]);
@@ -5200,14 +5292,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         return;
       }
-      if (window.GaaneMix && GaaneMix.settings.autoplay && !state.isRepeat && !state._autoplayBusy) {
+      if (window.GaaneMix && GaaneMix.settings.autoplay && state.repeatMode === 'off' && !state._autoplayBusy) {
         state._autoplayBusy = true;
         GaaneMix.extendQueue().then((n) => {
           state._autoplayBusy = false;
           if (n > 0 && state.queueIndex + 1 < state.queue.length) { playNext(); return; }
-          state.queueIndex = 0; recordPlayedIndex(0); playTrack(state.queue[0]);
+          if (state.repeatMode === 'all') { state.queueIndex = 0; recordPlayedIndex(0); playTrack(state.queue[0]); }
         });
         return;
+      }
+      if (state.repeatMode !== 'all' && state._isNaturalEnding) return;   // end of the queue: stop, as BitChord does
+      if (state.repeatMode === 'all' && window.GaaneQueue) {
+        // repeat-all cycles the context only; hand-queued songs that have played are dropped
+        const keep = state.queue.filter((t) => GaaneQueue.tierOf(t) !== 'user');
+        if (keep.length) state.queue = keep;
+        updateQueueBadge();
       }
       nextIdx = 0;
     }
@@ -5221,7 +5320,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function playPrev() {
-    if (el.nativeAudio && el.nativeAudio.currentTime > 3) {
+    if (el.nativeAudio && el.nativeAudio.currentTime > (window.GaaneQueue ? GaaneQueue.BACK_RESTARTS_AFTER_SEC : 3)) {
       el.nativeAudio.currentTime = 0;
       return;
     }
@@ -6131,6 +6230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function performSearch(query) {
     if (!query || !query.trim()) return;
+    rememberRecentSearch(query);
 
     const searchToken = (state.searchToken || 0) + 1;
     state.searchToken = searchToken;
@@ -6473,14 +6573,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const items = [
       { label: 'Play', run: () => row.click() },
       { label: 'Play next', run: () => {
-        if (!state.queue.length || state.queueIndex < 0) { playTrack(track); return; }
+        if (!state.queue.length || state.queueIndex < 0) { playTrack(track, null, -1, 'oneoff'); return; }
         state.queue = state.queue.filter((t, i) => i <= state.queueIndex || !isSameTrack(t, track));
-        state.queue.splice(state.queueIndex + 1, 0, track);
+        const at = GaaneQueue.userInsertionIndex(state.queue, state.queueIndex, true);
+        state.queue.splice(at, 0, GaaneQueue.entry(track, GaaneQueue.USER));
         updateQueueBadge();
         showToast('Playing next', 'success');
       } },
       { label: 'Add to queue', run: () => {
-        if (!state.queue.some(t => isSameTrack(t, track))) state.queue.push(track);
+        if (!state.queue.length || state.queueIndex < 0) { playTrack(track, null, -1, 'oneoff'); return; }
+        if (!state.queue.some((t, i) => i > state.queueIndex && isSameTrack(t, track))) {
+          const at = GaaneQueue.userInsertionIndex(state.queue, state.queueIndex, false);
+          state.queue.splice(at, 0, GaaneQueue.entry(track, GaaneQueue.USER));
+        }
         updateQueueBadge();
         showToast('Added to queue', 'success');
       } },
@@ -6950,6 +7055,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function renderQueueView() {
     if (el.queueTracksList) renderTracks(el.queueTracksList, state.queue, 'queue');
+    const sum = document.getElementById('queue-summary');
+    if (sum) {
+      const q = state.queue || [];
+      const cur = q[state.queueIndex];
+      const up = q.slice(Math.max(0, state.queueIndex + 1));
+      const tier = (t) => (window.GaaneQueue ? GaaneQueue.tierOf(t) : 'context');
+      const mine = up.filter((t) => tier(t) === 'user').length;
+      const auto = up.filter((t) => tier(t) === 'autoplay').length;
+      const rest = up.length - mine - auto;
+      const src = cur && cur._source ? cur._source.replace(/^oneoff:/, '') : '';
+      const parts = [];
+      if (src && src !== 'search' && src !== 'oneoff') parts.push('Playing from ' + src);
+      else if (cur && tier(cur) === 'context' && src === 'search') parts.push('Playing from search');
+      if (rest > 0) parts.push(rest + ' up next');
+      if (mine > 0) parts.push(mine + ' added by you');
+      if (auto > 0) parts.push(auto + ' autoplay');
+      sum.textContent = parts.join(' · ');
+      sum.classList.toggle('hidden', !parts.length);
+    }
   }
 
   function updateLocalBadge() {
@@ -8361,6 +8485,112 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Search suggestions: recent searches on focus, YouTube Music's own suggestions while typing (as in YTM / Spotify).
+  const RECENT_SEARCH_KEY = 'gaane_recent_searches';
+  function readRecentSearches() {
+    try { const a = JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || '[]'); return Array.isArray(a) ? a.filter(x => typeof x === 'string').slice(0, 8) : []; } catch (e) { return []; }
+  }
+  function writeRecentSearches(list) { try { localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(list.slice(0, 8))); } catch (e) {} }
+  function rememberRecentSearch(q) {
+    const t = String(q || '').trim();
+    if (!t) return;
+    writeRecentSearches([t, ...readRecentSearches().filter(x => x.toLowerCase() !== t.toLowerCase())]);
+  }
+  (function initSearchSuggest() {
+    const input = el.searchInput;
+    const wrap = input && input.closest('.search-box-wrapper');
+    if (!input || !wrap) return;
+    const box = document.createElement('div');
+    box.className = 'search-suggest hidden';
+    box.setAttribute('role', 'listbox');
+    wrap.appendChild(box);
+    let items = [];       // { text, recent }
+    let active = -1;
+    let seq = 0;
+    let timer = 0;
+    const escapeHtml = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const close = () => { box.classList.add('hidden'); active = -1; };
+    const setActive = (i) => {
+      active = i;
+      [...box.children].forEach((c, k) => c.classList.toggle('active', k === i));
+    };
+    const pick = (text) => {
+      input.value = text;
+      if (el.searchClearBtn) el.searchClearBtn.classList.remove('hidden');
+      close();
+      performSearch(text);
+    };
+    function render(typed) {
+      if (!items.length) { close(); return; }
+      const q = typed.trim().toLowerCase();
+      box.innerHTML = '';
+      items.forEach((it, i) => {
+        const row = document.createElement('div');
+        row.className = 'search-suggest-item';
+        row.setAttribute('role', 'option');
+        const ico = it.recent
+          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>'
+          : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>';
+        let label = escapeHtml(it.text);
+        if (!it.recent && q && it.text.toLowerCase().startsWith(q)) {
+          label = escapeHtml(it.text.slice(0, q.length)) + '<b>' + escapeHtml(it.text.slice(q.length)) + '</b>';
+        }
+        row.innerHTML = `<span class="ss-ico">${ico}</span><span class="ss-text">${label}</span>` +
+          (it.recent ? '<button type="button" class="ss-remove" title="Remove" aria-label="Remove">&times;</button>' : '');
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          if (e.target.closest('.ss-remove')) {
+            writeRecentSearches(readRecentSearches().filter(x => x !== it.text));
+            items = items.filter(x => x !== it);
+            render(input.value);
+            return;
+          }
+          pick(it.text);
+        });
+        row.addEventListener('mouseenter', () => setActive(i));
+        box.appendChild(row);
+      });
+      box.classList.remove('hidden');
+      setActive(Math.min(active, items.length - 1));
+    }
+    async function refresh() {
+      const typed = input.value;
+      const q = typed.trim();
+      const mySeq = ++seq;
+      if (!q) {
+        items = readRecentSearches().map(text => ({ text, recent: true }));
+        render(typed);
+        return;
+      }
+      const lower = q.toLowerCase();
+      const recents = readRecentSearches().filter(x => x.toLowerCase().startsWith(lower) && x.toLowerCase() !== lower).slice(0, 3)
+        .map(text => ({ text, recent: true }));
+      items = recents;
+      render(typed);
+      try {
+        const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-suggest?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (mySeq !== seq || input.value !== typed) return;
+        const seen = new Set(recents.map(r => r.text.toLowerCase()));
+        const remote = (data.suggestions || []).filter(t => !seen.has(t.toLowerCase())).slice(0, 8 - recents.length)
+          .map(text => ({ text, recent: false }));
+        items = [...recents, ...remote];
+        render(typed);
+      } catch (e) {}
+    }
+    input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 110); });
+    input.addEventListener('focus', () => { refresh(); });
+    input.addEventListener('blur', () => { setTimeout(close, 120); });
+    input.addEventListener('keydown', (e) => {
+      const open = !box.classList.contains('hidden') && items.length;
+      if (e.key === 'ArrowDown' && open) { e.preventDefault(); setActive((active + 1) % items.length); }
+      else if (e.key === 'ArrowUp' && open) { e.preventDefault(); setActive((active - 1 + items.length) % items.length); }
+      else if (e.key === 'Enter' && open && active >= 0) { e.preventDefault(); e.stopImmediatePropagation(); pick(items[active].text); }
+      else if (e.key === 'Enter') { close(); }
+      else if (e.key === 'Escape' && open) { e.stopImmediatePropagation(); close(); }
+    }, true);
+  })();
+
   if (el.searchIconBtn) {
     el.searchIconBtn.addEventListener('click', () => {
       const val = el.searchInput ? el.searchInput.value.trim() : '';
@@ -8509,12 +8739,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function applyRepeatUI() {
+    const m = state.repeatMode;
+    state.isRepeat = m === 'one';
+    if (el.btnRepeat) {
+      el.btnRepeat.classList.toggle('active', m !== 'off');
+      el.btnRepeat.classList.toggle('repeat-one', m === 'one');
+      el.btnRepeat.title = m === 'off' ? 'Repeat: off' : m === 'all' ? 'Repeat: all' : 'Repeat: this song';
+    }
+    document.getElementById('btn-tvk-repeat')?.classList.toggle('on', m !== 'off');
+  }
   if (el.btnRepeat) {
-    el.btnRepeat.classList.toggle('active', state.isRepeat);
+    applyRepeatUI();
     el.btnRepeat.addEventListener('click', () => {
-      state.isRepeat = !state.isRepeat;
-      localStorage.setItem('riff_repeat', state.isRepeat ? '1' : '0');
-      el.btnRepeat.classList.toggle('active', state.isRepeat);
+      state.repeatMode = state.repeatMode === 'off' ? 'all' : state.repeatMode === 'all' ? 'one' : 'off';
+      localStorage.setItem('gaane_repeat_mode', state.repeatMode);
+      localStorage.setItem('riff_repeat', state.repeatMode === 'one' ? '1' : '0');
+      applyRepeatUI();
     });
   }
 
@@ -8575,9 +8816,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (el.btnClearQueue) {
     el.btnClearQueue.addEventListener('click', () => {
-      state.queue = [];
-      state.queueIndex = -1;
-      state.queueHistory = [];
+      const ui = state.queue.findIndex((t, i) => i > state.queueIndex && window.GaaneQueue && GaaneQueue.tierOf(t) === 'user');
+      if (ui >= 0) {
+        // only the upcoming hand-queued songs go; the album/playlist and autoplay stay
+        const cur = state.currentTrack;
+        state.queue = state.queue.filter((t, i) => i <= state.queueIndex || GaaneQueue.tierOf(t) !== 'user');
+        state.queueIndex = Math.max(0, cur ? state.queue.findIndex((t) => isSameTrack(t, cur)) : state.queueIndex);
+      } else {
+        state.queue = [];
+        state.queueIndex = -1;
+        state.queueHistory = [];
+      }
       updateQueueBadge();
       renderQueueView();
     });
@@ -14503,7 +14752,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (fill) fill.style.width = `${Math.min(100, (a.currentTime / a.duration) * 100)}%`;
       }
       document.getElementById('btn-tvk-shuffle')?.classList.toggle('on', !!state.isShuffle);
-      document.getElementById('btn-tvk-repeat')?.classList.toggle('on', !!state.isRepeat);
+      document.getElementById('btn-tvk-repeat')?.classList.toggle('on', state.repeatMode !== 'off');
       const isFav = document.getElementById('fav-icon')?.getAttribute('fill') === 'currentColor';
       document.getElementById('tvk-fav-icon')?.setAttribute('fill', isFav ? 'currentColor' : 'none');
       document.getElementById('btn-tvk-fav')?.classList.toggle('on', isFav);
@@ -14511,11 +14760,110 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(syncTvkControls, 400);
   })();
 
+  // ListenBrainz connection (settings) -----------------------------------------------------------
+  (() => {
+    const row = document.getElementById('scrobble-connect-row');
+    const btnC = document.getElementById('btn-scrobble-connect');
+    const btnD = document.getElementById('btn-scrobble-disconnect');
+    const input = document.getElementById('scrobble-token');
+    const hint = document.getElementById('scrobble-hint');
+    if (!row || !btnC || !input) return;
+    const defaultHint = hint ? hint.textContent : '';
+    const apply = (st) => {
+      state.scrobbleOn = !!(st && st.connected);
+      row.classList.toggle('hidden', state.scrobbleOn);
+      if (btnD) btnD.classList.toggle('hidden', !state.scrobbleOn);
+      if (hint) hint.textContent = state.scrobbleOn ? `Connected${st.user ? ' as ' + st.user : ''}. Every song you listen to is scrobbled.` : defaultHint;
+    };
+    const refresh = async () => {
+      try { const r = await fetch(`http://127.0.0.1:${state.serverPort}/api/scrobble-status`); apply(await r.json()); } catch (e) {}
+    };
+    btnC.addEventListener('click', async () => {
+      btnC.disabled = true;
+      try {
+        const r = await fetch(`http://127.0.0.1:${state.serverPort}/api/scrobble-connect`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: input.value }) });
+        const d = await r.json();
+        if (d.ok) { input.value = ''; apply({ connected: true, user: d.user }); } else if (hint) hint.textContent = d.error || 'Could not connect';
+      } catch (e) { if (hint) hint.textContent = 'Could not reach ListenBrainz'; }
+      btnC.disabled = false;
+    });
+    if (btnD) btnD.addEventListener('click', async () => {
+      await fetch(`http://127.0.0.1:${state.serverPort}/api/scrobble-disconnect`, { method: 'POST' }).catch(() => {});
+      apply({ connected: false });
+    });
+    setTimeout(refresh, 1500);
+  })();
+
+  // Elapsed / remaining time toggle on the playbar ----------------------------------------------------
+  (() => {
+    const dur = document.getElementById('time-duration');
+    if (!dur) return;
+    state.timeRemaining = localStorage.getItem('gaane_time_remaining') === '1';
+    dur.style.cursor = 'pointer';
+    dur.title = 'Click to switch between total and remaining time';
+    const paint = () => {
+      const a = document.getElementById('native-audio');
+      const d = (a && Number.isFinite(a.duration) && a.duration > 0) ? a.duration : (state.currentTrack && state.currentTrack.duration) || 0;
+      const c = (a && a.currentTime) || 0;
+      dur.textContent = state.timeRemaining ? '-' + formatDuration(Math.max(0, d - c)) : formatDuration(d);
+    };
+    dur.addEventListener('click', () => {
+      state.timeRemaining = !state.timeRemaining;
+      localStorage.setItem('gaane_time_remaining', state.timeRemaining ? '1' : '0');
+      paint();
+    });
+    setInterval(() => { if (state.timeRemaining && state.isPlaying) paint(); }, 500);
+  })();
+
+  // Stats for nerds ------------------------------------------------------------------------------------
+  (() => {
+    const box = document.getElementById('nerd-stats');
+    const btn = document.getElementById('btn-nerd-stats');
+    if (!box || !btn) return;
+    let on = localStorage.getItem('gaane_nerd_stats') === '1';
+    btn.classList.toggle('active', on);
+    const rows = () => {
+      const a = document.getElementById('native-audio');
+      const t = state.currentTrack || {};
+      const ctx = window.audioEngine && window.audioEngine.ctx;
+      const mix = window.GaaneMix && GaaneMix.status ? GaaneMix.status() : null;
+      const tier = window.GaaneQueue && t ? GaaneQueue.tierOf(t) : '-';
+      const out = [
+        ['Track', `${t.title || '-'} — ${t.artist || '-'}`],
+        ['Source', t.platform || (t.url && /^http:\/\/127/.test(t.url) ? 'local file' : 'stream')],
+        ['Queue tier', `${tier}${t._source ? ' · ' + String(t._source).replace(/^oneoff:/, '') : ''}`],
+        ['Position', a ? `${a.currentTime.toFixed(1)} / ${Number.isFinite(a.duration) ? a.duration.toFixed(1) : '?'} s` : '-'],
+        ['Playback rate', a ? a.playbackRate.toFixed(3) + '×' : '-'],
+        ['Buffered', a && a.buffered && a.buffered.length ? `${(a.buffered.end(a.buffered.length - 1) - a.currentTime).toFixed(1)} s ahead` : '-'],
+        ['Audio engine', ctx ? `${ctx.sampleRate} Hz · ${ctx.state} · latency ${((ctx.baseLatency || 0) * 1000).toFixed(0)} ms` : 'direct'],
+        ['Lyrics', state.lyricsSource ? `${state.lyricsSource.kind} · ${state.lyricsSource.source || 'cache'}` : 'none'],
+        ['Mix', mix ? JSON.stringify(mix).slice(0, 80) : 'off'],
+        ['Repeat / shuffle', `${state.repeatMode} / ${state.isShuffle ? 'on' : 'off'}`]
+      ];
+      return out;
+    };
+    const paint = () => {
+      if (!on) return;
+      box.innerHTML = rows().map(([k, v]) => `<div><span>${k}</span><b>${String(v).replace(/</g, '&lt;')}</b></div>`).join('');
+    };
+    const apply = () => { box.classList.toggle('hidden', !on); btn.classList.toggle('active', on); paint(); };
+    btn.addEventListener('click', () => { on = !on; localStorage.setItem('gaane_nerd_stats', on ? '1' : '0'); apply(); });
+    setInterval(paint, 700);
+    apply();
+  })();
+
   // Listening stats: sample playback once a second and send small batches to the local stats store.
   (() => {
     if (!window.GaaneListening) return;
     const post = (batch) => {
       const events = batch.map((e) => ({ track: e.track, ms: e.ms, plays: e.plays, ts: e.ts }));
+      if (state.scrobbleOn) {
+        batch.forEach((e) => {
+          if (e.plays > 0) {
+            fetch(`http://127.0.0.1:${state.serverPort}/api/scrobble`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ track: e.track, kind: 'single', listenedAt: e.ts }) }).catch(() => {});
+          }
+        });
+      }
       fetch(`http://127.0.0.1:${state.serverPort}/api/stats/record`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }), keepalive: true }).catch(() => {});
     };
     const rec = window.GaaneListening.createRecorder(post);
@@ -14526,7 +14874,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setInterval(() => {
       const a = document.getElementById('native-audio');
       const t = state.currentTrack;
-      if (state.isPlaying && t && a && !a.paused && !a.ended && a.readyState > 2) rec.tick(slim(t), (a.duration || 0) * 1000);
+      if (state.isPlaying && t && a && !a.paused && !a.ended && a.readyState > 2) {
+        rec.tick(slim(t), (a.duration || 0) * 1000);
+        if (state.scrobbleOn && state._nowPlayingSent !== t.id && a.currentTime > 2) {
+          state._nowPlayingSent = t.id;
+          fetch(`http://127.0.0.1:${state.serverPort}/api/scrobble`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ track: slim(t), kind: 'playing_now' }) }).catch(() => {});
+        }
+      }
       else rec.stop();
     }, 1000);
     setInterval(() => rec.flush(), 30000);
@@ -14845,6 +15199,151 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   setInterval(syncEdgeGlow, 700);
 
+  // Verse: a large, word-by-word lyrics view for ambient mode (words rise into place as they are sung) ----------
+  const verseView = (() => {
+    const host = el.tvKaraokeContent;
+    if (!host) return null;
+    const stage = document.createElement('div');
+    stage.className = 'verse-stage';
+    stage.innerHTML = '<div class="verse-line verse-prev"></div><div class="verse-line verse-cur"></div><div class="verse-line verse-next"></div>';
+    host.appendChild(stage);
+    const prevEl = stage.children[0], curEl = stage.children[1], nextEl = stage.children[2];
+    let on = localStorage.getItem('gaane_verse') === '1';
+    let shownIdx = -2, wordEls = [], wordTimes = [], raf = 0;
+    const lineTime = (l) => (l && l.time >= 0 ? l.time : -1);
+    function build(idx) {
+      const L = state.syncedLyrics || [];
+      const cur = L[idx];
+      prevEl.textContent = idx > 0 ? (L[idx - 1].text || '') : '';
+      nextEl.textContent = L[idx + 1] ? (L[idx + 1].text || '') : '';
+      curEl.innerHTML = '';
+      wordEls = []; wordTimes = [];
+      if (!cur) return;
+      const start = lineTime(cur);
+      const next = L.slice(idx + 1).find((x) => lineTime(x) >= 0);
+      const end = next ? lineTime(next) : start + 4;
+      let words = cur.words && cur.words.length ? cur.words : null;
+      if (!words) {
+        const parts = String(cur.text || '').split(/\s+/).filter(Boolean);
+        const span = Math.max(0.8, end - start - 0.15);
+        const weights = parts.map((p) => Math.max(2, p.length));
+        const total = weights.reduce((a, b) => a + b, 0);
+        let at = start;
+        words = parts.map((p, i) => { const d = span * weights[i] / total; const w = { t: p, s: at, e: at + d }; at += d; return w; });
+      }
+      words.forEach((w) => {
+        const sp = document.createElement('span');
+        sp.className = 'verse-word';
+        sp.textContent = w.t;
+        curEl.appendChild(sp);
+        curEl.appendChild(document.createTextNode(' '));
+        wordEls.push(sp); wordTimes.push(w);
+      });
+    }
+    function tick() {
+      raf = 0;
+      if (!on || !state.isTvKaraokeOpen) return;
+      raf = requestAnimationFrame(tick);
+      const a = el.nativeAudio;
+      const L = state.syncedLyrics || [];
+      if (!a || !L.length) { if (shownIdx !== -1) { shownIdx = -1; build(-1); } return; }
+      const t = a.currentTime + (state.isCustomLyrics ? 0.25 : 0);
+      let idx = -1;
+      for (let i = 0; i < L.length; i++) { const lt = lineTime(L[i]); if (lt >= 0 && t >= lt) idx = i; else if (lt > t) break; }
+      if (idx !== shownIdx) { shownIdx = idx; build(idx); stage.classList.toggle('verse-pre', idx < 0); }
+      for (let i = 0; i < wordEls.length; i++) {
+        const w = wordTimes[i];
+        const dur = Math.max(0.14, Math.min(0.55, (w.e - w.s) || 0.3));
+        const p = Math.min(1, Math.max(0, (t - w.s) / dur));
+        const sung = t >= w.e ? 1 : 0;
+        wordEls[i].style.setProperty('--p', p.toFixed(3));
+        wordEls[i].classList.toggle('now', p > 0 && !sung);
+      }
+    }
+    function apply() {
+      const tv = el.tvKaraoke;
+      if (tv) tv.classList.toggle('verse-on', on);
+      document.querySelectorAll('#tvk-verse-group .tvk-pill-btn').forEach((b) => b.classList.toggle('active', (b.dataset.verse === '1') === on));
+      if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); }
+    }
+    document.querySelectorAll('#tvk-verse-group .tvk-pill-btn').forEach((b) => b.addEventListener('click', () => {
+      on = b.dataset.verse === '1';
+      localStorage.setItem('gaane_verse', on ? '1' : '0');
+      apply();
+    }));
+    setInterval(() => { if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); } if (el.tvKaraoke) el.tvKaraoke.classList.toggle('verse-on', on); }, 500);
+    apply();
+    return { apply };
+  })();
+
+  // Live backdrop ------------------------------------------------------------------------------------------
+  const liveBackdrop = (() => {
+    if (!window.GaaneBackdrop) return null;
+    let bd = null;
+    try { bd = GaaneBackdrop.create(); } catch (e) { bd = null; }
+    if (!bd) return null;
+    const read = () => { try { return JSON.parse(localStorage.getItem('gaane_backdrop') || '{}'); } catch (e) { return {}; } };
+    const cfg = Object.assign({ scene: 'off', where: 'ambient' }, read());
+    const save = () => { try { localStorage.setItem('gaane_backdrop', JSON.stringify(cfg)); } catch (e) {} };
+    let prev = null, freq = null;
+    bd.setSource({
+      bands: () => {
+        const out = new Array(28).fill(0);
+        if (!state.isPlaying || !audioEngine || !audioEngine.getAnalyserNode) return out;
+        const an = audioEngine.getAnalyserNode();
+        if (!an) return out;
+        if (!freq) freq = new Uint8Array(an.frequencyBinCount);
+        if (audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(true);
+        audioEngine.getFrequencyData(freq);
+        const { smooth, sens } = vizSettings();
+        if (!prev || prev.length !== freq.length) prev = new Float32Array(freq.length);
+        for (let i = 0; i < freq.length; i++) prev[i] = prev[i] * smooth + Math.min(255, freq[i] * sens) * (1 - smooth);
+        for (let i = 0; i < 28; i++) {
+          const b0 = i * 2, b1 = Math.min(prev.length - 1, b0 + 1);
+          out[i] = Math.min(1, Math.pow((((prev[b0] || 0) + (prev[b1] || 0)) * 0.5) / 255, 1.3));
+        }
+        return out;
+      },
+      palette: () => edgePalette
+    });
+    bd.setScene(cfg.scene === 'off' ? 'aurora' : cfg.scene);
+
+    function place() {
+      const tv = el.tvKaraoke;
+      const wantAmbient = cfg.scene !== 'off' && ambientOpen;
+      const wantApp = cfg.scene !== 'off' && cfg.where === 'app' && !ambientOpen;
+      document.body.classList.toggle('live-bd-app', wantApp);
+      if (tv) tv.classList.toggle('live-bd-on', wantAmbient);
+      if (wantAmbient) {
+        const host = tv && tv.querySelector('.tv-bg');
+        if (host && bd.canvas.parentElement !== host) host.insertBefore(bd.canvas, host.firstChild);
+        bd.setQuality(60, 0.55);
+        bd.start();
+      } else if (wantApp) {
+        const host = document.getElementById('cover-bg');
+        if (host && bd.canvas.parentElement !== host) host.insertBefore(bd.canvas, host.firstChild);
+        bd.setQuality(state.isPlaying ? 30 : 12, 0.4);
+        bd.start();
+      } else {
+        bd.stop();
+      }
+    }
+    const paintUI = () => {
+      document.querySelectorAll('#backdrop-scenes .backdrop-pill').forEach((b) => b.classList.toggle('active', b.dataset.scene === cfg.scene));
+      document.querySelectorAll('#backdrop-where .backdrop-pill').forEach((b) => b.classList.toggle('active', b.dataset.where === cfg.where));
+    };
+    document.querySelectorAll('#backdrop-scenes .backdrop-pill').forEach((b) => b.addEventListener('click', () => {
+      cfg.scene = b.dataset.scene; if (cfg.scene !== 'off') bd.setScene(cfg.scene); save(); paintUI(); place();
+    }));
+    document.querySelectorAll('#backdrop-where .backdrop-pill').forEach((b) => b.addEventListener('click', () => {
+      cfg.where = b.dataset.where; save(); paintUI(); place();
+    }));
+    paintUI();
+    setInterval(place, 600);
+    return { bd, cfg, place };
+  })();
+  window.__gaaneBackdrop = liveBackdrop;
+
   function edgePulseLoop(ts) {
     requestAnimationFrame(edgePulseLoop);
     if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 16) return;
@@ -15030,7 +15529,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function ytActivate(it, sec) {
     if (it.kind === 'track') {
       const idx = sec.tracks.indexOf(it.track);
-      playTrack(it.track, sec.tracks.slice(), Math.max(0, idx));
+      playTrack(it.track, null, -1, 'oneoff:' + (sec.title || 'YouTube Music'));
     } else {
       openYtmCollection(it);
     }
@@ -15059,7 +15558,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     row.querySelector('img').src = t.thumbnail || '';
     row.querySelector('.yt-card-title').textContent = t.title;
     row.querySelector('.yt-card-sub').textContent = t.artist || '';
-    row.addEventListener('click', () => playTrack(t, sec.tracks.slice(), Math.max(0, sec.tracks.indexOf(t))));
+    row.addEventListener('click', () => playTrack(t, null, -1, 'oneoff:' + (sec.title || 'YouTube Music')));
     return row;
   }
 

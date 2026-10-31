@@ -11,6 +11,16 @@
 
 ---
 
+## What's new in 1.2
+
+- **Word-by-word lyrics from many sources.** Gaane asks lrc.red, BiniLyrics, LyricsPlus, BetterLyrics, Unison and LRCLIB at once and uses the best answer, preferring lyrics timed to each word. Fixed lyrics that got stuck on one line when a source sent unsynced text.
+- **Search suggestions** while you type (from YouTube Music), plus your recent searches.
+- **A queue that behaves like the big apps.** Playing a song from search plays just that song, then similar songs (not the next search result). Songs you add by hand play before the rest, shuffle plays each song once, and repeat now goes off, all, one. Clear queue removes only what you added. The Queue page says where the music comes from.
+- **Smoother edge light.** One cover colour flows into the next instead of separate blocks.
+- **Live backdrop** (Settings, Appearance): Aurora, Voxel wall, Contours or Ripples, moving with the music in the cover's colours, in ambient mode or behind the whole app.
+- **Verse lyrics view** in ambient mode: very large lyrics where each word rises into place as it is sung.
+- **Scrobble to ListenBrainz**, **Stats for nerds** panel, and a click on the total time to see the time remaining.
+
 ## What's new in 1.0
 
 - **Your YouTube Music, inside Gaane.** Connect your account and your Home (Quick picks, Speed dial, Listen again, mixes, mood chips and more), Explore, liked songs, library and history appear in the app, laid out like YouTube Music.
@@ -81,4 +91,4 @@ No telemetry. Settings, your listening stats and your library stay on your machi
 
 ## Credits and licence
 
-Gaane started from the open-source Riff player (MIT). The listening-stats and playback ideas were inspired by BitChord; Automix is written from scratch for Gaane (BitChord's own Automix engine is AGPL and is not used). See [LICENSE](LICENSE).
+Gaane started from the open-source Riff player (MIT). The listening-stats, queue and lyrics-source ideas were inspired by BitChord, and the live backdrop and Verse view are original work inspired by the idea of music-reactive wallpapers (they use none of VoxelWall's code or art); Automix is written from scratch for Gaane (BitChord's own Automix engine is AGPL and is not used). See [LICENSE](LICENSE).

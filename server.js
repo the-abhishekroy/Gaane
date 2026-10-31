@@ -15,8 +15,10 @@ let ACTIVE_PORT = PORT;
 const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand, resolveDownloadDir, resolveBinary } = require('./platform');
 const logger = require('./logger');
 const ytmusic = require('./ytmusic');
+const lyricsProviders = require('./lyrics-providers');
 const { createStats } = require('./stats');
 const listeningStats = createStats(path.join(DATA_DIR, 'stats'));
+const scrobbler = require('./scrobble').createScrobbler(DATA_DIR);
 process.on('exit', () => { try { listeningStats.flush(); } catch (e) {} });
 const { getSystemAudioOutputInfo } = require('./audio-output');
 
@@ -2792,7 +2794,10 @@ async function handleEncode(req, res, parsedUrl) {
 }
 
 function sanitizeForLyrics(title, artist) {
+  const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let cleanTitle = (title || '')
+  .replace(/[\u2018\u2019\u02bc']/g, '')
+  .replace(new RegExp('^\\s*' + escRe(String(artist || '').trim() || '\u0000') + '\\s*[-\u2013\u2014:]\\s*', 'i'), '')
   .replace(/\[.*?\]|\(.*?\)/g, '')
   .replace(/official\s*(music)?\s*video|official\s*audio|lyrics|hd|4k|remastered|visualizer|clip\s*officiel|video\s*clip/gi, '')
   .replace(/ft\.?|feat\.?/gi, '')
@@ -2861,6 +2866,10 @@ const TOKEN_PROTECTED_ROUTES = new Set([
   '/api/vibe',
   ...ytmusic.ROUTES,
   '/api/stats/record',
+  '/api/scrobble-status',
+  '/api/scrobble-connect',
+  '/api/scrobble-disconnect',
+  '/api/scrobble',
   '/api/stats/summary',
   '/api/stats/reset',
   '/api/search',
@@ -2925,10 +2934,10 @@ function getCustomLyricsPath(title, artist) {
 }
 
 function getFetchedLyricsPath(title, artist) {
-  return path.join(LYRICS_DIR, lyricsKey(title, artist) + '.lrc');
+  return path.join(LYRICS_DIR, lyricsKey(title, artist) + '.v2.lrc');
 }
 
-async function handleLyrics(req, res, title, artist, allowOnline = true) {
+async function handleLyrics(req, res, title, artist, allowOnline = true, extra = {}) {
   const cacheKey = `${artist}:${title}`;
   const cached = lyricsCache.get(cacheKey);
   if (cached?.promise) {
@@ -2972,21 +2981,18 @@ async function handleLyrics(req, res, title, artist, allowOnline = true) {
     } catch (e) {}
   }
 
-  let fetchedLyricsPath = getFetchedLyricsPath(title, artist);
-  if (!fs.existsSync(fetchedLyricsPath) && /^[\x00-\x7F]*$/.test((title || '') + (artist || ''))) {
-    const legacyFetched = legacyFetchedLyricsPath(title, artist);
-    if (fs.existsSync(legacyFetched)) {
-      fetchedLyricsPath = legacyFetched;
-    }
-  }
-
+  const fetchedLyricsPath = getFetchedLyricsPath(title, artist);
   if (fs.existsSync(fetchedLyricsPath)) {
     try {
       const diskLyrics = await fs.promises.readFile(fetchedLyricsPath, 'utf-8');
-      if (lyricsCache.get(cacheKey) === inFlightEntry) {
-        lyricsCache.set(cacheKey, { text: diskLyrics, isCustom: false });
+      // Word-timed results are kept; weaker ones are retried after 12 h in case a better source has it now.
+      const stale = !/<\d+:\d+/.test(diskLyrics) && Date.now() - fs.statSync(fetchedLyricsPath).mtimeMs > 12 * 3600 * 1000;
+      if (!stale) {
+        if (lyricsCache.get(cacheKey) === inFlightEntry) {
+          lyricsCache.set(cacheKey, { text: diskLyrics, isCustom: false });
+        }
+        return sendLyrics(diskLyrics);
       }
-      return sendLyrics(diskLyrics);
     } catch (e) {}
   }
 
@@ -2995,7 +3001,11 @@ async function handleLyrics(req, res, title, artist, allowOnline = true) {
   }
 
   try {
-    const rawLyrics = await fetchLyricsDirect(title, artist);
+    const { cleanTitle, cleanArtist } = sanitizeForLyrics(title, artist);
+    const raced = await lyricsProviders.fetchLyrics({
+      title: cleanTitle || title, artist: cleanArtist || artist, durationMs: extra.durationMs, album: extra.album,
+    });
+    const rawLyrics = raced ? `[src:${raced.source}|${raced.kind}]\n${raced.lrc}` : await fetchLyricsDirect(title, artist);
     if (rawLyrics && rawLyrics.trim().length > 0) {
       try {
         await fs.promises.writeFile(fetchedLyricsPath, rawLyrics, 'utf-8');
@@ -4750,6 +4760,29 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (parsedUrl.pathname === '/api/scrobble-status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(Object.assign({ success: true }, scrobbler.status())));
+  }
+  if (parsedUrl.pathname === '/api/scrobble-disconnect' && req.method === 'POST') {
+    scrobbler.disconnect();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true }));
+  }
+  if ((parsedUrl.pathname === '/api/scrobble-connect' || parsedUrl.pathname === '/api/scrobble') && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { if (res.writableEnded) return; body += chunk; if (body.length > 65536) { body = ''; req.removeAllListeners('data'); req.removeAllListeners('end'); res.writeHead(413, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: false, error: 'payload too large' })); req.resume(); } });
+    req.on('end', async () => {
+      const payload = safeJsonParse(body, {});
+      const r = parsedUrl.pathname === '/api/scrobble-connect'
+        ? await scrobbler.connect(payload.token)
+        : await scrobbler.submit(payload.track, payload.kind, payload.listenedAt);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(Object.assign({ success: !!r.ok }, r)));
+    });
+    return;
+  }
+
   if (ytmusic.ROUTES.has(parsedUrl.pathname)) {
     return ytmusic.handleRoute(parsedUrl, req, res);
   }
@@ -5066,7 +5099,8 @@ const server = http.createServer(async (req, res) => {
     const title = parsedUrl.query.title || '';
     const artist = parsedUrl.query.artist || '';
     const allowOnline = parsedUrl.query.online !== '0';
-    return handleLyrics(req, res, title, artist, allowOnline);
+    const durationMs = Math.round(parseFloat(parsedUrl.query.duration || '0') * 1000) || 0;
+    return handleLyrics(req, res, title, artist, allowOnline, { durationMs, album: parsedUrl.query.album || '' });
   }
 
   res.writeHead(404);

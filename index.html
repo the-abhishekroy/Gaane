@@ -388,6 +388,7 @@
           <h2>Playback queue</h2>
           <button class="btn-outline-pill" id="btn-clear-queue">Clear queue</button>
         </div>
+        <div class="queue-summary hidden" id="queue-summary"></div>
         <div class="tracks-list" id="queue-tracks-list">
           <div class="empty-hint">Queue is empty. Play a track to start.</div>
         </div>
@@ -1072,6 +1073,27 @@
             </div>
 
             <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Live backdrop</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">An animated background that moves with the music, painted in the cover's colours</span>
+                </div>
+              </div>
+              <div class="backdrop-pills" id="backdrop-scenes">
+                <button type="button" class="backdrop-pill active" data-scene="off">Off</button>
+                <button type="button" class="backdrop-pill" data-scene="aurora">Aurora</button>
+                <button type="button" class="backdrop-pill" data-scene="voxels">Voxel wall</button>
+                <button type="button" class="backdrop-pill" data-scene="contours">Contours</button>
+                <button type="button" class="backdrop-pill" data-scene="ripples">Ripples</button>
+              </div>
+              <div class="setting-item-top" style="margin-top:10px;"><span class="setting-name">Show it</span></div>
+              <div class="backdrop-pills" id="backdrop-where">
+                <button type="button" class="backdrop-pill active" data-where="ambient">In ambient mode</button>
+                <button type="button" class="backdrop-pill" data-where="app">Behind the whole app</button>
+              </div>
+            </div>
+
+            <div class="setting-item">
               <div class="setting-item-top">
                 <span class="setting-name">Cover background brightness</span>
                 <span class="setting-value" id="val-cover-bg-brightness">45%</span>
@@ -1131,6 +1153,28 @@
                   <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Keeps the music going with similar songs when your queue runs out</span>
                 </div>
                 <button class="effect-switch-btn" id="btn-autoplay"><span class="thumb"></span></button>
+              </div>
+            </div>
+            <div class="setting-item" id="scrobble-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Scrobble to ListenBrainz</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);" id="scrobble-hint">Sends what you play to your ListenBrainz profile. Get your user token at listenbrainz.org/settings.</span>
+                </div>
+                <button class="btn-outline-pill hidden" id="btn-scrobble-disconnect">Disconnect</button>
+              </div>
+              <div class="setting-item-top" id="scrobble-connect-row" style="margin-top:8px; gap:8px;">
+                <input type="password" id="scrobble-token" class="setting-input" placeholder="ListenBrainz user token" autocomplete="off" style="flex:1; min-width:0;">
+                <button class="btn-outline-pill" id="btn-scrobble-connect">Connect</button>
+              </div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Stats for nerds</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">A small panel on the playing screen with sample rate, buffer, lyrics source, queue tier and the current mix</span>
+                </div>
+                <button class="effect-switch-btn" id="btn-nerd-stats"><span class="thumb"></span></button>
               </div>
             </div>
             <div class="setting-item">
@@ -2889,6 +2933,13 @@
         <input type="range" class="pill-range" id="tvk-gap" min="4" max="40" step="1" value="16">
       </div>
       <div class="tvk-row">
+        <span class="tvk-label">Lyrics view</span>
+        <div class="tvk-pill-group" id="tvk-verse-group">
+          <button type="button" class="tvk-pill-btn" data-verse="0">Classic</button>
+          <button type="button" class="tvk-pill-btn" data-verse="1">Verse</button>
+        </div>
+      </div>
+      <div class="tvk-row">
         <span class="tvk-label">Animation</span>
         <select class="pill-select" id="tvk-anim" style="display:none">
           <option value="smooth">Smooth</option>
@@ -3023,6 +3074,9 @@
   </div>
 
   <script src="assets/hls.min.js"></script>
+  <div class="nerd-stats hidden" id="nerd-stats" aria-hidden="true"></div>
+  <script src="live-backdrop.js"></script>
+  <script src="queue-core.js"></script>
   <script src="audio-engine.js"></script>
   <script src="mix-analysis.js"></script>
   <script src="mix-engine.js"></script>
