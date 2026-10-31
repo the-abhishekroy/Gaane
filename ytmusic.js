@@ -538,7 +538,12 @@ async function handleRoute(parsedUrl, req, res) {
       return sendJson(res, 200, { success: true });
     }
     if (p === '/api/ytm-home') {
-      const data = await fetchHome(parsedUrl.query.refresh === '1', String(parsedUrl.query.params || ''));
+      let data = await fetchHome(parsedUrl.query.refresh === '1', String(parsedUrl.query.params || ''));
+      if (!data.connected && loadAuth()) {
+        // not signed-in looking: refresh the session cookie the way a browser would, then ask once more
+        await rotateCookies(true);
+        try { data = await fetchHome(true, String(parsedUrl.query.params || '')); } catch (e) {}
+      }
       if (!data.connected && loadAuth()) {
         noteAuthResult(false);
         if (needsReconnect()) return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music needs you to connect again' });
@@ -610,17 +615,48 @@ async function searchSuggestions(q) {
   return list;
 }
 
+// Browsers refresh the short-lived part of a Google session (the SIDTS cookie) every few minutes through
+// accounts.google.com/RotateCookies. A pasted cookie never gets that refresh unless the app does it too, which is why
+// a login used to die after a day or two. This does what the browser does, and keeps whatever Google sends back.
+let lastRotate = 0, rotating = null;
+function rotateCookies(force) {
+  if (!loadAuth()) return Promise.resolve(false);
+  if (rotating) return rotating;
+  if (!force && Date.now() - lastRotate < 10 * 60 * 1000) return Promise.resolve(true);
+  rotating = new Promise((resolve) => {
+    const body = '[000,"-0000000000000000000"]';
+    const req = https.request({
+      hostname: 'accounts.google.com', path: '/RotateCookies', method: 'POST', timeout: 12000,
+      headers: {
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body),
+        Origin: 'https://accounts.google.com',
+        Referer: 'https://accounts.google.com/RotateCookiesPage?origin=https%3A%2F%2Fmusic.youtube.com&yt_pid=1',
+        'User-Agent': UA, Cookie: authCache.cookie
+      }
+    }, (res) => {
+      res.resume();
+      try { mergeSetCookies(res.headers['set-cookie']); } catch (e) {}
+      res.on('end', () => { lastRotate = Date.now(); logger.log('info', `YouTube Music cookie refresh: HTTP ${res.statusCode}`); resolve(res.statusCode === 200); });
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.write(body); req.end();
+  }).finally(() => { rotating = null; });
+  return rotating;
+}
+
 // Quietly use the saved login now and then so Google keeps handing out fresh session cookies (merged above).
 let keepAliveTimer = null;
 function startKeepAlive() {
   if (keepAliveTimer) return;
   const tick = async () => {
     if (!loadAuth()) return;
+    await rotateCookies(true);
     try { await ytmRequest('browse', { browseId: 'FEmusic_home' }); } catch (e) { /* tried again at the next tick; never signs out */ }
   };
-  setTimeout(tick, 15000);
-  keepAliveTimer = setInterval(tick, 4 * 60 * 60 * 1000);
+  setTimeout(tick, 8000);
+  keepAliveTimer = setInterval(tick, 45 * 60 * 1000);
   if (keepAliveTimer.unref) keepAliveTimer.unref();
 }
 
-module.exports = { startKeepAlive, mergeSetCookies, _test: { seal, unseal, saveAuth, loadAuth, clearAuth, cookie: () => (authCache ? authCache.cookie : null), reset: () => { authCache = null; } }, searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
+module.exports = { rotateCookies, startKeepAlive, mergeSetCookies, _test: { seal, unseal, saveAuth, loadAuth, clearAuth, cookie: () => (authCache ? authCache.cookie : null), reset: () => { authCache = null; } }, searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };

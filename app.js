@@ -15738,10 +15738,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         <h3>Connect YouTube Music</h3>
         <p class="ytm-dialog-note">Google doesn't allow sign-in inside apps like this, so use your normal browser once:</p>
         <ol class="ytm-dialog-steps">
-          <li>Open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> in Chrome and make sure you are signed in.</li>
+          <li>Open a <b>private window</b> in your browser (Chrome: <b>⇧⌘N</b>, Safari: <b>⇧⌘N</b>) and go to <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a>. Sign in there.</li>
           <li>Press <b>⌥⌘I</b> to open Developer Tools, go to the <b>Network</b> tab, then press <b>⌘R</b> to reload.</li>
           <li>Type <b>browse</b> in the filter box, click the first request, open <b>Headers</b> and scroll to <b>Request Headers</b>.</li>
           <li>Right-click the <b>cookie</b> line, choose <b>Copy value</b>, and paste it below.</li>
+          <li>After you press Connect, <b>close the private window without signing out</b>. This matters: a browser keeps changing its session, so a copy taken from a normal tab stops working after a day or two. A private window you close leaves Gaane's copy as the only one, and Gaane keeps it fresh itself.</li>
         </ol>
         <textarea id="ytm-cookie-input" placeholder="Paste the cookie value here" spellcheck="false"></textarea>
         <div class="ytm-dialog-error" id="ytm-dialog-error"></div>
@@ -15749,7 +15750,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn-outline-pill" id="ytm-dialog-cancel">Cancel</button>
           <button class="btn-pill-primary" id="ytm-dialog-connect"><span>Connect</span></button>
         </div>
-        <p class="ytm-dialog-privacy">The cookie is stored encrypted on this Mac and only sent to YouTube Music.</p>
+        <p class="ytm-dialog-privacy">You only do this once. The login is kept on this Mac, sealed, and only sent to YouTube Music; it is removed only when you press Disconnect.</p>
       </div>`;
     document.body.appendChild(overlay);
     const input = overlay.querySelector('#ytm-cookie-input');
