@@ -8019,7 +8019,7 @@ body.live-bd-app .live-backdrop-canvas { opacity: 0.85; }
 .tv-karaoke.live-bd-on .tv-bg { filter: none; transform: none; }
 .tv-karaoke.live-bd-on .tv-bg-layer { opacity: 0 !important; }
 .tv-karaoke.live-bd-on .tv-bg::after { background: linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.22)); }
-.tv-karaoke.live-bd-on .tv-bg { opacity: 1; }
+.tv-karaoke.live-bd-on .tv-bg { opacity: 1; inset: 0; filter: none; }
 .backdrop-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .backdrop-pill {
   border: 1px solid rgba(255, 255, 255, 0.12); background: transparent; color: inherit; cursor: pointer;
@@ -8052,3 +8052,21 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 #btn-tvk-backdrop.off, #btn-tvk-verse.off { opacity: 1; background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.45); }
 .tvk-toast { position: absolute; top: 84px; right: 28px; z-index: 11; padding: 8px 14px; border-radius: 999px; font-size: 13px; color: #fff; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); opacity: 0; transition: opacity .25s; pointer-events: none; }
 .tvk-toast.show { opacity: 1; }
+
+/* Verse v2: kinetic word-by-word lyrics */
+.verse-stage2 { display: none; position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; font-family: var(--tvk-font, inherit); }
+.tv-karaoke.verse-on .verse-stage2 { display: block; }
+.tv-karaoke.verse-on .tv-karaoke-content .lyrics-container { display: none; }
+.vw { position: absolute; left: 50%; top: 50%; white-space: nowrap; line-height: 1; letter-spacing: -0.02em; will-change: transform, opacity; }
+.verse-decor { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 1; pointer-events: none; color: var(--vhi, #fff); }
+.vd-bar { position: absolute; left: 0; top: 0; width: calc(var(--hw, 200px) + var(--hf, 100px) * 0.55); height: calc(var(--hh, 100px) * 1.05); transform: translate(-50%, -50%) rotate(-3deg); background: var(--vhi, #fff); border-radius: calc(var(--hf, 100px) * 0.16); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.vd-tick { position: absolute; width: calc(var(--hf, 100px) * 0.28); height: 3px; background: var(--vhi, #fff); border-radius: 2px; transform-origin: left center; }
+.vd-tick.t1 { left: calc(var(--hw, 200px) * 0.5 + var(--hf, 100px) * 0.45); top: calc(var(--hh, 100px) * -0.52); transform: rotate(-58deg); }
+.vd-tick.t2 { left: calc(var(--hw, 200px) * 0.5 + var(--hf, 100px) * 0.62); top: calc(var(--hh, 100px) * -0.35); transform: rotate(-40deg); }
+.vd-under { position: absolute; left: calc(var(--hw, 200px) * -0.5); top: calc(var(--hh, 100px) * 0.5); width: var(--hw, 200px); height: calc(var(--hf, 100px) * 0.075); background: var(--vhi, #fff); border-radius: 4px; transform-origin: left center; transform: scaleX(var(--vp, 0)); }
+.vd-wave { position: absolute; left: 0; top: 0; width: calc(var(--hw, 200px) * 1.2); height: calc(var(--hf, 100px) * 0.4); transform: translate(-50%, calc(var(--hh, 100px) * 0.4)); overflow: visible; }
+.vd-ring { position: absolute; left: 0; top: 0; width: calc(var(--hw, 200px) + var(--hf, 100px) * 0.9); height: calc(var(--hh, 100px) + var(--hf, 100px) * 0.7); transform: translate(-50%, -50%); overflow: visible; filter: drop-shadow(0 0 8px var(--vhi, #fff)); }
+.vd-ellipse { position: absolute; left: 0; top: 0; width: var(--ow, 600px); height: var(--oh, 300px); transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.16); border-radius: 50%; }
+.vd-echo { position: absolute; left: 0; top: 0; font-size: var(--hf, 100px); font-weight: 800; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; color: transparent; -webkit-text-stroke: 2px var(--vhi, #fff); transform: translate(-50%, -50%); }
+.verse-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.verse-chips .tvk-pill-btn { flex: 0 0 auto; }

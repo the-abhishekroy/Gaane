@@ -16,6 +16,7 @@ const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, META
 const logger = require('./logger');
 const ytmusic = require('./ytmusic');
 const lyricsProviders = require('./lyrics-providers');
+try { ytmusic.startKeepAlive(); } catch (e) {}
 const { createStats } = require('./stats');
 const listeningStats = createStats(path.join(DATA_DIR, 'stats'));
 const scrobbler = require('./scrobble').createScrobbler(DATA_DIR);

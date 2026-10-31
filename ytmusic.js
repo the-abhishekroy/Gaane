@@ -16,31 +16,102 @@ function safeStorage() {
   try { return process.versions.electron ? require('electron').safeStorage : null; } catch (e) { return null; }
 }
 
+// The saved session never depends on the macOS Keychain (its key differs between a dev run and the installed app,
+// which used to make Gaane forget the login). It is sealed with a key kept next to it in the data folder.
+const KEY_PATH = path.join(DATA_DIR, 'ytm-auth.key');
+function localKey() {
+  try {
+    const k = fs.readFileSync(KEY_PATH);
+    if (k.length === 32) return k;
+  } catch (e) {}
+  const k = crypto.randomBytes(32);
+  fs.mkdirSync(path.dirname(KEY_PATH), { recursive: true });
+  fs.writeFileSync(KEY_PATH, k, { mode: 0o600 });
+  return k;
+}
+function seal(text) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', localKey(), iv);
+  const data = Buffer.concat([c.update(text, 'utf8'), c.final()]);
+  return { v: 2, iv: iv.toString('base64'), tag: c.getAuthTag().toString('base64'), data: data.toString('base64') };
+}
+function unseal(p) {
+  const d = crypto.createDecipheriv('aes-256-gcm', localKey(), Buffer.from(p.iv, 'base64'));
+  d.setAuthTag(Buffer.from(p.tag, 'base64'));
+  return Buffer.concat([d.update(Buffer.from(p.data, 'base64')), d.final()]).toString('utf8');
+}
+
+function writeAuthFile(cookie) {
+  fs.mkdirSync(path.dirname(AUTH_PATH), { recursive: true });
+  const tmp = AUTH_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(seal(cookie)), { mode: 0o600 });
+  fs.renameSync(tmp, AUTH_PATH);
+}
+
 function loadAuth() {
   if (authCache) return authCache;
+  let raw = null;
+  try { raw = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8')); } catch (e) { return null; }
+  let cookie = '';
+  let legacy = false;
   try {
-    const raw = JSON.parse(fs.readFileSync(AUTH_PATH, 'utf8'));
-    let cookie = raw.cookie || '';
-    if (raw.enc) {
+    if (raw.v === 2) cookie = unseal(raw);
+    else if (raw.enc) {
       const ss = safeStorage();
-      cookie = ss && ss.isEncryptionAvailable() ? ss.decryptString(Buffer.from(raw.enc, 'base64')) : '';
-    }
-    if (cookie) authCache = { cookie };
-  } catch (e) {}
+      if (ss && ss.isEncryptionAvailable()) cookie = ss.decryptString(Buffer.from(raw.enc, 'base64'));
+      legacy = true;
+    } else if (raw.cookie) { cookie = raw.cookie; legacy = true; }
+  } catch (e) {
+    logger.log('warn', `Saved YouTube Music login could not be read (${e.message}); the file is kept untouched`);
+  }
+  if (cookie) {
+    authCache = { cookie };
+    if (legacy) { try { writeAuthFile(cookie); } catch (e) {} }   // move old Keychain-sealed logins to the stable format
+  }
   return authCache;
 }
 
 function saveAuth(cookie) {
-  const ss = safeStorage();
-  const payload = ss && ss.isEncryptionAvailable()
-    ? { enc: ss.encryptString(cookie).toString('base64') }
-    : { cookie };
-  fs.mkdirSync(path.dirname(AUTH_PATH), { recursive: true });
-  fs.writeFileSync(AUTH_PATH, JSON.stringify(payload), { mode: 0o600 });
+  writeAuthFile(cookie);
   authCache = { cookie };
   homeCache = null;
   homeCacheByParams.clear();
   tabCache.clear();
+  authFailures = 0;
+}
+
+// Google rotates parts of the session cookie while you use it; keep the newest values so the login keeps working.
+let persistTimer = null;
+function mergeSetCookies(setCookie) {
+  if (!authCache || !Array.isArray(setCookie) || !setCookie.length) return;
+  let cookie = authCache.cookie, changed = false;
+  for (const line of setCookie) {
+    const first = String(line).split(';')[0];
+    const eq = first.indexOf('=');
+    if (eq < 1) continue;
+    const name = first.slice(0, eq).trim(), value = first.slice(eq + 1).trim();
+    const attrs = String(line).toLowerCase();
+    const maxAge = /max-age=(-?\d+)/.exec(attrs);
+    if (!value || (maxAge && parseInt(maxAge[1], 10) <= 0) || /expires=[^;]*(19|1970)/.test(attrs)) continue;   // deletions never log us out
+    if (!/^(__Secure-[13]P(SID|APISID|SIDTS|SIDCC)|S?SID|HSID|SSID|S?APISID|SIDCC|LOGIN_INFO|VISITOR_INFO1_LIVE|__Secure-ROLLOUT_TOKEN)$/.test(name)) continue;
+    const re = new RegExp('(^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=[^;]*');
+    if (re.test(cookie)) { if (cookieValue(cookie, name) !== value) { cookie = cookie.replace(re, `$1${name}=${value}`); changed = true; } }
+    else { cookie = cookie.replace(/;?\s*$/, '') + `; ${name}=${value}`; changed = true; }
+  }
+  if (!changed) return;
+  authCache = { cookie };
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => { try { writeAuthFile(authCache.cookie); } catch (e) {} }, 600);
+}
+
+// The saved login is only ever removed by the user (Disconnect). A failed request marks it "needs attention"
+// after several confirmed failures, but the cookie stays, so a hiccup never signs you out.
+let authFailures = 0, lastGoodAt = 0;
+function noteAuthResult(ok) {
+  if (ok) { authFailures = 0; lastGoodAt = Date.now(); } else authFailures++;
+}
+function needsReconnect() {
+  return !!authCache && authFailures >= 3 && Date.now() - lastGoodAt > 20 * 60 * 1000;
 }
 
 function clearAuth() {
@@ -48,6 +119,7 @@ function clearAuth() {
   homeCache = null;
   homeCacheByParams.clear();
   tabCache.clear();
+  authFailures = 0;
   try { fs.unlinkSync(AUTH_PATH); } catch (e) {}
 }
 
@@ -89,8 +161,10 @@ function ytmRequest(endpoint, extra = {}, query = '', visitorData = '') {
     }, (res) => {
       let data = '';
       res.setEncoding('utf8');
+      if (auth) { try { mergeSetCookies(res.headers['set-cookie']); } catch (e) {} }
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
+        if (auth) noteAuthResult(res.statusCode === 200);
         if (res.statusCode === 401 || res.statusCode === 403) {
           const err = new Error('auth');
           err.authExpired = true;
@@ -449,7 +523,7 @@ async function handleRoute(parsedUrl, req, res) {
   const p = parsedUrl.pathname;
   try {
     if (p === '/api/ytm-status') {
-      return sendJson(res, 200, { success: true, connected: !!loadAuth() });
+      return sendJson(res, 200, { success: true, connected: !!loadAuth(), needsReconnect: needsReconnect() });
     }
     if (p === '/api/ytm-import-cookie' && req.method === 'POST') {
       let body = '';
@@ -466,9 +540,11 @@ async function handleRoute(parsedUrl, req, res) {
     if (p === '/api/ytm-home') {
       const data = await fetchHome(parsedUrl.query.refresh === '1', String(parsedUrl.query.params || ''));
       if (!data.connected && loadAuth()) {
-        clearAuth();
-        return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music session expired' });
+        noteAuthResult(false);
+        if (needsReconnect()) return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music needs you to connect again' });
+        return sendJson(res, 200, { success: false, connected: true, retry: true, error: 'YouTube Music did not answer; trying again shortly' });
       }
+      if (data.connected) noteAuthResult(true);
       return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, chips: data.chips, wave: waveTracks(data.sections) });
     }
     if (p === '/api/ytm-suggest') {
@@ -500,7 +576,10 @@ async function handleRoute(parsedUrl, req, res) {
     }
   } catch (e) {
     logger.log('warn', `${p} failed: ${e.message}`);
-    if (e.authExpired) { clearAuth(); return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music session expired' }); }
+    if (e.authExpired) {
+      if (needsReconnect()) return sendJson(res, 200, { success: false, expired: true, error: 'YouTube Music needs you to connect again' });
+      return sendJson(res, 200, { success: false, retry: true, error: 'YouTube Music did not answer; trying again shortly' });
+    }
     return sendJson(res, 200, { success: false, error: e.message });
   }
   return sendJson(res, 404, { success: false, error: 'not found' });
@@ -531,4 +610,17 @@ async function searchSuggestions(q) {
   return list;
 }
 
-module.exports = { searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
+// Quietly use the saved login now and then so Google keeps handing out fresh session cookies (merged above).
+let keepAliveTimer = null;
+function startKeepAlive() {
+  if (keepAliveTimer) return;
+  const tick = async () => {
+    if (!loadAuth()) return;
+    try { await ytmRequest('browse', { browseId: 'FEmusic_home' }); } catch (e) { /* tried again at the next tick; never signs out */ }
+  };
+  setTimeout(tick, 15000);
+  keepAliveTimer = setInterval(tick, 4 * 60 * 60 * 1000);
+  if (keepAliveTimer.unref) keepAliveTimer.unref();
+}
+
+module.exports = { startKeepAlive, mergeSetCookies, _test: { seal, unseal, saveAuth, loadAuth, clearAuth, cookie: () => (authCache ? authCache.cookie : null), reset: () => { authCache = null; } }, searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };

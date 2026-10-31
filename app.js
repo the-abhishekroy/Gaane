@@ -3824,10 +3824,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // While Automix hands the song over, the lyrics keep following the outgoing song's clock (mid-blend they switch).
-  function lyricsNow() { return state._lyricsClock ? state._lyricsClock() : (el.nativeAudio ? el.nativeAudio.currentTime : 0); }
+  // The lyric clock is what you HEAR: the player's position minus the time sound takes to leave the speakers
+  // (Bluetooth can be 150 ms or more), plus a few ms for the screen to draw, plus any nudge you set for the song.
+  function lyricsLatency() {
+    const c = audioEngine && audioEngine.ctx;
+    if (!c) return 0;
+    return Math.min(0.4, Math.max(0, (c.outputLatency || 0) + (c.baseLatency || 0)));
+  }
+  const LYRIC_OFFSETS_KEY = 'gaane_lyric_offsets';
+  function lyricsTrackKey() { const t = state.currentTrack; return t ? String(t.id || t.url || t.title || '') : ''; }
+  function lyricsOffsetMs() {
+    try { const o = JSON.parse(localStorage.getItem(LYRIC_OFFSETS_KEY) || '{}'); return Number(o[lyricsTrackKey()]) || 0; } catch (e) { return 0; }
+  }
+  function setLyricsOffsetMs(ms) {
+    try {
+      const o = JSON.parse(localStorage.getItem(LYRIC_OFFSETS_KEY) || '{}');
+      const k = lyricsTrackKey();
+      if (!k) return;
+      if (!ms) delete o[k]; else o[k] = ms;
+      const keys = Object.keys(o);
+      if (keys.length > 400) keys.slice(0, keys.length - 400).forEach((x) => delete o[x]);
+      localStorage.setItem(LYRIC_OFFSETS_KEY, JSON.stringify(o));
+    } catch (e) {}
+  }
+  function lyricsNow() {
+    const base = state._lyricsClock ? state._lyricsClock() : (el.nativeAudio ? el.nativeAudio.currentTime : 0);
+    return base - lyricsLatency() + 0.03 + lyricsOffsetMs() / 1000;
+  }
 
   function updateSyncedLyricsHighlight(currentTime) {
-    if (state._lyricsClock) currentTime = state._lyricsClock();
+    currentTime = lyricsNow();
     if (state.syncedLyrics.length === 0 || !state.isWindowVisible) return;
     let activeIndex = -1;
 
@@ -5388,6 +5414,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           const qId = nextTrack.id || '';
           const qInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(qUrl)}&id=${encodeURIComponent(qId)}&platform=${nextTrack.platform || state.platform}&title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&duration=${encodeURIComponent(nextTrack.duration || 0)}&thumbnail=${encodeURIComponent(nextTrack.thumbnail || '')}`;
           fetch(qInfoUrl).catch(() => {});
+          // lyrics too, so they are on screen the moment the next song starts
+          if (getAdv('online_lyrics', true)) {
+            fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&online=1&duration=${encodeURIComponent(nextTrack.duration || 0)}&album=${encodeURIComponent(nextTrack.album || '')}`).catch(() => {});
+          }
         }
       }
     }
@@ -15211,168 +15241,137 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   setInterval(syncEdgeGlow, 700);
 
-  // Verse: a large, word-by-word lyrics view for ambient mode (words rise into place as they are sung) ----------
-  const verseView = (() => {
-    const host = el.tvKaraokeContent;
-    if (!host) return null;
-    const stage = document.createElement('div');
-    stage.className = 'verse-stage';
-    stage.innerHTML = '<div class="verse-line verse-prev"></div><div class="verse-line verse-cur"></div><div class="verse-line verse-next"></div>';
-    host.appendChild(stage);
-    const prevEl = stage.children[0], curEl = stage.children[1], nextEl = stage.children[2];
-    let on = localStorage.getItem('gaane_verse') === '1';
-    let shownIdx = -2, wordEls = [], wordTimes = [], raf = 0;
-    const lineTime = (l) => (l && l.time >= 0 ? l.time : -1);
-    function build(idx) {
-      const L = state.syncedLyrics || [];
-      const cur = L[idx];
-      prevEl.textContent = idx > 0 ? (L[idx - 1].text || '') : '';
-      nextEl.textContent = L[idx + 1] ? (L[idx + 1].text || '') : '';
-      curEl.innerHTML = '';
-      wordEls = []; wordTimes = [];
-      if (!cur) return;
-      const start = lineTime(cur);
-      const next = L.slice(idx + 1).find((x) => lineTime(x) >= 0);
-      const end = next ? lineTime(next) : start + 4;
-      let words = cur.words && cur.words.length ? cur.words : null;
-      if (!words) {
-        const parts = String(cur.text || '').split(/\s+/).filter(Boolean);
-        const span = Math.max(0.8, end - start - 0.15);
-        const weights = parts.map((p) => Math.max(2, p.length));
-        const total = weights.reduce((a, b) => a + b, 0);
-        let at = start;
-        words = parts.map((p, i) => { const d = span * weights[i] / total; const w = { t: p, s: at, e: at + d }; at += d; return w; });
-      }
-      words.forEach((w) => {
-        const sp = document.createElement('span');
-        sp.className = 'verse-word';
-        sp.textContent = w.t;
-        curEl.appendChild(sp);
-        curEl.appendChild(document.createTextNode(' '));
-        wordEls.push(sp); wordTimes.push(w);
-      });
-    }
-    function tick() {
-      raf = 0;
-      if (!on || !state.isTvKaraokeOpen) return;
-      raf = requestAnimationFrame(tick);
-      const a = el.nativeAudio;
-      const L = state.syncedLyrics || [];
-      if (!a || !L.length) { if (shownIdx !== -1) { shownIdx = -1; build(-1); } return; }
-      const t = lyricsNow() + (state.isCustomLyrics ? 0.25 : 0);
-      let idx = -1;
-      for (let i = 0; i < L.length; i++) { const lt = lineTime(L[i]); if (lt >= 0 && t >= lt) idx = i; else if (lt > t) break; }
-      if (idx !== shownIdx) { shownIdx = idx; build(idx); stage.classList.toggle('verse-pre', idx < 0); }
-      for (let i = 0; i < wordEls.length; i++) {
-        const w = wordTimes[i];
-        const dur = Math.max(0.14, Math.min(0.55, (w.e - w.s) || 0.3));
-        const p = Math.min(1, Math.max(0, (t - w.s) / dur));
-        const sung = t >= w.e ? 1 : 0;
-        wordEls[i].style.setProperty('--p', p.toFixed(3));
-        wordEls[i].classList.toggle('now', p > 0 && !sung);
-      }
-    }
-    function apply() {
-      const tv = el.tvKaraoke;
-      if (tv) tv.classList.toggle('verse-on', on);
-      document.querySelectorAll('#tvk-verse-group .tvk-pill-btn, #settings-verse-group .backdrop-pill').forEach((b) => b.classList.toggle('active', (b.dataset.verse === '1') === on));
-      const qb = document.getElementById('btn-tvk-verse');
-      if (qb) qb.classList.toggle('off', !on);
-      if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); }
-    }
-    const setOn = (v) => { on = !!v; localStorage.setItem('gaane_verse', on ? '1' : '0'); apply(); };
-    document.querySelectorAll('#tvk-verse-group .tvk-pill-btn, #settings-verse-group .backdrop-pill').forEach((b) => b.addEventListener('click', () => setOn(b.dataset.verse === '1')));
-    setInterval(() => { if (on && state.isTvKaraokeOpen && !raf) { shownIdx = -2; raf = requestAnimationFrame(tick); } if (el.tvKaraoke) el.tvKaraoke.classList.toggle('verse-on', on); }, 500);
-    apply();
-    return { apply, toggle: () => { setOn(!on); return on; }, isOn: () => on };
+  // Lyrics timing nudge for the current song (ambient settings panel) ---------------------------------------
+  (() => {
+    const slider = document.getElementById('lyric-offset');
+    const val = document.getElementById('val-lyric-offset');
+    const reset = document.getElementById('btn-lyric-offset-reset');
+    if (!slider) return;
+    const paint = () => { const ms = lyricsOffsetMs(); slider.value = ms; if (val) val.textContent = (ms > 0 ? '+' : '') + ms + ' ms'; };
+    slider.addEventListener('input', () => { setLyricsOffsetMs(parseInt(slider.value, 10) || 0); paint(); state.forceSnapLyrics = true; });
+    if (reset) reset.addEventListener('click', () => { setLyricsOffsetMs(0); paint(); });
+    let lastKey = '';
+    setInterval(() => { const k = lyricsTrackKey(); if (k !== lastKey) { lastKey = k; paint(); } }, 700);
+    paint();
   })();
 
-  // Live backdrop ------------------------------------------------------------------------------------------
-  const liveBackdrop = (() => {
-    if (!window.GaaneBackdrop) return null;
+  // Ambient extras: Verse lyrics (kinetic, word by word) and the Live backdrop -------------------------------------
+  const ambientExtras = (() => {
+    const read = () => { try { return JSON.parse(localStorage.getItem('gaane_ambient') || '{}'); } catch (e) { return {}; } };
+    const cfg = Object.assign({ verse: false, vstyle: 'reel', vmode: 'source', scene: 'off', where: 'ambient' }, read(), (() => {
+      // carry over the earlier simple settings
+      const o = {};
+      try { const old = JSON.parse(localStorage.getItem('gaane_backdrop') || '{}'); if (old.scene) o.scene = old.scene; if (old.where) o.where = old.where; } catch (e) {}
+      if (localStorage.getItem('gaane_verse') === '1') o.verse = true;
+      return read().scene ? {} : o;
+    })());
+    const save = () => { try { localStorage.setItem('gaane_ambient', JSON.stringify(cfg)); } catch (e) {} };
+
+    // ---- Verse
+    const host = el.tvKaraokeContent;
+    let verse = null;
+    if (host && window.GaaneVerse) {
+      verse = GaaneVerse.create(host, {
+        lines: () => state.syncedLyrics,
+        time: () => lyricsNow() + (state.isCustomLyrics ? 0.25 : 0),
+        palette: () => edgePalette,
+        audio: () => ({ bass: liveBass() })
+      });
+      verse.setStyle(cfg.vstyle); verse.setMode(cfg.vmode);
+    }
+    // ---- Backdrop
     let bd = null;
-    try { bd = GaaneBackdrop.create(); } catch (e) { bd = null; }
-    if (!bd) return null;
-    const read = () => { try { return JSON.parse(localStorage.getItem('gaane_backdrop') || '{}'); } catch (e) { return {}; } };
-    const cfg = Object.assign({ scene: 'off', where: 'ambient' }, read());
-    const save = () => { try { localStorage.setItem('gaane_backdrop', JSON.stringify(cfg)); } catch (e) {} };
-    let prev = null, freq = null;
-    bd.setSource({
-      bands: () => {
-        const out = new Array(28).fill(0);
-        if (!state.isPlaying || !audioEngine || !audioEngine.getAnalyserNode) return out;
-        const an = audioEngine.getAnalyserNode();
-        if (!an) return out;
-        if (!freq) freq = new Uint8Array(an.frequencyBinCount);
-        if (audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(true);
-        audioEngine.getFrequencyData(freq);
-        const { smooth, sens } = vizSettings();
-        if (!prev || prev.length !== freq.length) prev = new Float32Array(freq.length);
-        for (let i = 0; i < freq.length; i++) prev[i] = prev[i] * smooth + Math.min(255, freq[i] * sens) * (1 - smooth);
-        for (let i = 0; i < 28; i++) {
-          const b0 = i * 2, b1 = Math.min(prev.length - 1, b0 + 1);
-          out[i] = Math.min(1, Math.pow((((prev[b0] || 0) + (prev[b1] || 0)) * 0.5) / 255, 1.3));
-        }
-        return out;
-      },
-      palette: () => edgePalette
-    });
-    bd.setScene(cfg.scene === 'off' ? 'aurora' : cfg.scene);
+    try { bd = window.GaaneBackdrop ? GaaneBackdrop.create() : null; } catch (e) { bd = null; }
+    let prev = null, freq = null, bassNow = 0;
+    function liveBands() {
+      const out = new Array(28).fill(0);
+      if (!state.isPlaying || !audioEngine || !audioEngine.getAnalyserNode) return out;
+      const an = audioEngine.getAnalyserNode();
+      if (!an) return out;
+      if (!freq) freq = new Uint8Array(an.frequencyBinCount);
+      if (audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(true);
+      audioEngine.getFrequencyData(freq);
+      const { smooth, sens } = vizSettings();
+      if (!prev || prev.length !== freq.length) prev = new Float32Array(freq.length);
+      for (let i = 0; i < freq.length; i++) prev[i] = prev[i] * smooth + Math.min(255, freq[i] * sens) * (1 - smooth);
+      for (let i = 0; i < 28; i++) {
+        const b0 = i * 2, b1 = Math.min(prev.length - 1, b0 + 1);
+        out[i] = Math.min(1, Math.pow((((prev[b0] || 0) + (prev[b1] || 0)) * 0.5) / 255, 1.3));
+      }
+      bassNow = (out[0] + out[1] + out[2] + out[3]) / 4;
+      return out;
+    }
+    function liveBass() { if (verse && !(bd && bd.running)) liveBands(); return bassNow; }
+    if (bd) {
+      bd.setSource({ bands: liveBands, palette: () => edgePalette });
+      bd.setScene(cfg.scene === 'off' ? 'aurora' : cfg.scene);
+    }
 
     function place() {
       const tv = el.tvKaraoke;
-      const wantAmbient = cfg.scene !== 'off' && ambientOpen;
-      const wantApp = cfg.scene !== 'off' && cfg.where === 'app' && !ambientOpen;
+      const open = !!(tv && state.isTvKaraokeOpen);
+      if (tv) tv.classList.toggle('verse-on', cfg.verse && open);
+      if (verse) { if (cfg.verse && open) verse.start(); else verse.stop(); verse.show(cfg.verse && open); }
+      const wantAmbient = !!bd && cfg.scene !== 'off' && open;
+      const wantApp = !!bd && cfg.scene !== 'off' && cfg.where === 'app' && !open;
       document.body.classList.toggle('live-bd-app', wantApp);
       if (tv) tv.classList.toggle('live-bd-on', wantAmbient);
+      if (!bd) return;
       if (wantAmbient) {
-        const host = tv && tv.querySelector('.tv-bg');
-        if (host && bd.canvas.parentElement !== host) host.insertBefore(bd.canvas, host.firstChild);
-        bd.setQuality(60, 0.55);
-        bd.start();
+        const h = tv && tv.querySelector('.tv-bg');
+        if (h && bd.canvas.parentElement !== h) h.insertBefore(bd.canvas, h.firstChild);
+        bd.setQuality(60, 0.6); bd.start();
       } else if (wantApp) {
-        const host = document.getElementById('cover-bg');
-        if (host && bd.canvas.parentElement !== host) host.insertBefore(bd.canvas, host.firstChild);
-        bd.setQuality(state.isPlaying ? 30 : 12, 0.4);
-        bd.start();
-      } else {
-        bd.stop();
-      }
+        const h = document.getElementById('cover-bg');
+        if (h && bd.canvas.parentElement !== h) h.insertBefore(bd.canvas, h.firstChild);
+        bd.setQuality(state.isPlaying ? 30 : 12, 0.45); bd.start();
+      } else bd.stop();
     }
-    const paintUI = () => {
-      document.querySelectorAll('#backdrop-scenes .backdrop-pill').forEach((b) => b.classList.toggle('active', b.dataset.scene === cfg.scene));
-      document.querySelectorAll('#backdrop-where .backdrop-pill').forEach((b) => b.classList.toggle('active', b.dataset.where === cfg.where));
+
+    // ---- the option chips (the same lists appear in the ambient settings panel and in Settings, Live backdrop)
+    const SCENES = [['off', 'Off'], ['aurora', 'Aurora'], ['voxels', 'Voxel wall'], ['contours', 'Contours'], ['ripples', 'Ripples']];
+    (window.GaaneBackdrop ? GaaneBackdrop.SCENE_LABELS || [] : []).forEach((x) => { if (!SCENES.some((s) => s[0] === x[0])) SCENES.push(x); });
+    const LISTS = {
+      verse: [['0', 'Classic'], ['1', 'Verse']],
+      vstyle: (window.GaaneVerse ? GaaneVerse.STYLES : []).map((s) => [s.id, s.name]),
+      vmode: (window.GaaneVerse ? GaaneVerse.MODES : []).map((m) => [m.id, m.name]),
+      scene: SCENES,
+      where: [['ambient', 'In ambient mode'], ['app', 'Behind the whole app']]
     };
-    document.querySelectorAll('#backdrop-scenes .backdrop-pill').forEach((b) => b.addEventListener('click', () => {
-      cfg.scene = b.dataset.scene; if (cfg.scene !== 'off') bd.setScene(cfg.scene); save(); paintUI(); place();
-    }));
-    document.querySelectorAll('#backdrop-where .backdrop-pill').forEach((b) => b.addEventListener('click', () => {
-      cfg.where = b.dataset.where; save(); paintUI(); place();
-    }));
-    paintUI();
-    const toast = (msg) => {
-      const tv = el.tvKaraoke; if (!tv) return;
-      let t = tv.querySelector('.tvk-toast');
-      if (!t) { t = document.createElement('div'); t.className = 'tvk-toast'; tv.appendChild(t); }
-      t.textContent = msg; t.classList.add('show');
-      clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1400);
-    };
-    const NAMES = { off: 'Backdrop off', aurora: 'Aurora', voxels: 'Voxel wall', contours: 'Contours', ripples: 'Ripples' };
-    const quick = document.getElementById('btn-tvk-backdrop');
-    const paintQuick = () => { if (quick) quick.classList.toggle('off', cfg.scene === 'off'); };
-    if (quick) quick.addEventListener('click', () => {
-      const order = ['off', 'aurora', 'voxels', 'contours', 'ripples'];
-      cfg.scene = order[(order.indexOf(cfg.scene) + 1) % order.length];
-      if (cfg.scene !== 'off') bd.setScene(cfg.scene);
-      save(); paintUI(); paintQuick(); place(); toast(NAMES[cfg.scene]);
+    const current = (k) => (k === 'verse' ? (cfg.verse ? '1' : '0') : cfg[k]);
+    function paint() {
+      document.querySelectorAll('[data-chips]').forEach((box) => {
+        const k = box.dataset.chips;
+        box.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === current(k)));
+      });
+      document.querySelectorAll('[data-verse-only]').forEach((r) => { r.style.display = cfg.verse ? '' : 'none'; });
+      const note = document.getElementById('verse-style-note');
+      if (note && window.GaaneVerse) { const st = GaaneVerse.STYLES.find((x) => x.id === cfg.vstyle); note.textContent = st ? st.note : ''; }
+    }
+    function choose(k, v) {
+      if (k === 'verse') cfg.verse = v === '1';
+      else if (k === 'vstyle') { cfg.vstyle = v; if (verse) verse.setStyle(v); }
+      else if (k === 'vmode') { cfg.vmode = v; if (verse) verse.setMode(v); }
+      else if (k === 'scene') { cfg.scene = v; if (bd && v !== 'off') bd.setScene(v); }
+      else if (k === 'where') cfg.where = v;
+      save(); paint(); place();
+    }
+    document.querySelectorAll('[data-chips]').forEach((box) => {
+      const k = box.dataset.chips;
+      const cls = box.dataset.pill === 'tvk' ? 'tvk-pill-btn' : 'backdrop-pill';
+      (LISTS[k] || []).forEach(([v, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = cls; b.dataset.v = v; b.textContent = label;
+        b.addEventListener('click', () => choose(k, v));
+        box.appendChild(b);
+      });
     });
-    const quickVerse = document.getElementById('btn-tvk-verse');
-    if (quickVerse) quickVerse.addEventListener('click', () => { if (verseView) toast(verseView.toggle() ? 'Verse lyrics' : 'Classic lyrics'); });
-    paintQuick();
-    setInterval(place, 600);
-    return { bd, cfg, place };
+    paint();
+    setInterval(place, 500);
+    return { cfg, bd, verse, place, choose };
   })();
-  window.__gaaneBackdrop = liveBackdrop;
+  window.__gaaneBackdrop = ambientExtras && ambientExtras.bd ? { bd: ambientExtras.bd, cfg: ambientExtras.cfg, place: ambientExtras.place } : null;
+  window.__gaaneAmbient = ambientExtras;
 
   function edgePulseLoop(ts) {
     requestAnimationFrame(edgePulseLoop);
@@ -15436,11 +15435,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function refreshYtmStatus() {
-    try {
-      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-status`);
-      const data = await res.json();
-      ytmState.connected = !!data.connected;
-    } catch (e) { ytmState.connected = false; }
+    // A slow start or a hiccup must never look like a logout: only the server's answer changes the state.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-status`);
+        const data = await res.json();
+        ytmState.connected = !!data.connected;
+        break;
+      } catch (e) { await new Promise((r) => setTimeout(r, 900)); }
+    }
     updateYtmUi();
     return ytmState.connected;
   }
@@ -15459,7 +15462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ytmState.connected = false;
       ytmState.sections = [];
       updateYtmUi();
-      showToast('YouTube Music session expired. Connect again.', 'error');
+      showToast('YouTube Music needs you to connect again (your saved login stopped working).', 'error');
       return null;
     }
     if (!data.success) return null;
