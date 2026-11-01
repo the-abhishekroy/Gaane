@@ -11,6 +11,13 @@
 
 ---
 
+## What's new in 1.2.6
+
+- **Lyrics follow BitChord's rule.** Every source is asked at once but answers are taken in priority order, and plain text is only used when no synced lyrics exist anywhere. Before, a fast plain-text answer could beat slower synced lyrics, which left lyrics not moving at all.
+- **Choose the lyrics provider** (globe button by the lyrics, or Lyrics source in the ambient settings), "Lyrics are loading" while they are found, and a "Mixing" badge while Automix blends.
+- **Account menu** in the top-right corner, like BitChord's: your YouTube Music account with name and picture, Add account, Manage accounts (sign out) and Settings. The Connect and Disconnect buttons are gone.
+- A safety net so a hand-over between songs can never leave the lyrics stuck.
+
 ## What's new in 1.2.5
 
 - **Wrong lyrics fixed.** A search for "Artist Title" could land on another song by the same artist. Lyric matches now have to be the same song (by name and artist), the artist is taken out of titles like "Imagine Dragons - Believer (Official Music Video)" and out of channel names like "ImagineDragonsVEVO", credit lines that some sources stamp as lyrics ("Lyrics by: ...") are dropped, and lyrics saved by earlier versions are refreshed.

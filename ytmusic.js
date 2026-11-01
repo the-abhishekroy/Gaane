@@ -11,6 +11,7 @@ const CLIENT_VERSION = '1.20250101.01.00';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 let authCache = null;
+let accountCache = null;
 let homeCache = null;
 
 function safeStorage() {
@@ -73,6 +74,7 @@ function loadAuth() {
 }
 
 function saveAuth(cookie) {
+  accountCache = null;
   writeAuthFile(cookie);
   authCache = { cookie };
   homeCache = null;
@@ -116,6 +118,7 @@ function needsReconnect() {
 }
 
 function clearAuth() {
+  accountCache = null;
   authCache = null;
   homeCache = null;
   homeCacheByParams.clear();
@@ -518,7 +521,7 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist', '/api/ytm-suggest', '/api/ytm-signin-start', '/api/ytm-signin-status', '/api/ytm-signin-cancel', '/api/ytm-browsers']);
+const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist', '/api/ytm-suggest', '/api/ytm-signin-start', '/api/ytm-signin-status', '/api/ytm-signin-cancel', '/api/ytm-browsers', '/api/ytm-account']);
 
 async function handleRoute(parsedUrl, req, res) {
   const p = parsedUrl.pathname;
@@ -552,6 +555,10 @@ async function handleRoute(parsedUrl, req, res) {
       }
       if (data.connected) noteAuthResult(true);
       return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, chips: data.chips, wave: waveTracks(data.sections) });
+    }
+    if (p === '/api/ytm-account') {
+      if (!loadAuth()) return sendJson(res, 200, { success: true, connected: false });
+      return sendJson(res, 200, { success: true, connected: true, account: await accountInfo() });
     }
     if (p === '/api/ytm-browsers') {
       const list = signin.findBrowsers();
@@ -673,6 +680,29 @@ function startKeepAlive() {
   setTimeout(tick, 8000);
   keepAliveTimer = setInterval(tick, 45 * 60 * 1000);
   if (keepAliveTimer.unref) keepAliveTimer.unref();
+}
+
+// Who is signed in: the name, handle and picture YouTube Music shows in its own account menu.
+async function accountInfo() {
+  if (accountCache && Date.now() - accountCache.at < 10 * 60 * 1000) return accountCache.info;
+  let info = { name: 'YouTube Music account', handle: '', photo: '' };
+  try {
+    const json = await ytmRequest('account/account_menu', {});
+    for (const o of walkObjects(json)) {
+      const h = o.activeAccountHeaderRenderer;
+      if (h) {
+        const photos = (h.accountPhoto && h.accountPhoto.thumbnails) || [];
+        info = {
+          name: joinRuns(h.accountName) || info.name,
+          handle: joinRuns(h.channelHandle) || joinRuns(h.email) || '',
+          photo: photos.length ? photos[photos.length - 1].url : ''
+        };
+        break;
+      }
+    }
+  } catch (e) { /* the menu still works without the details */ }
+  accountCache = { at: Date.now(), info };
+  return info;
 }
 
 // ---- lyrics from YouTube itself (used by lyrics-providers.js) ------------------------------------------------

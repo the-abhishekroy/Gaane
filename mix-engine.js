@@ -169,6 +169,7 @@
     host.state._isNaturalEnding = true;
     // the outgoing song is still the one you hear for the first half of the blend: keep screen and lyrics on it
     host.state._deferTrackUI = true;
+    host.state._deferAt = Date.now();
     host.state._lyricsClock = () => (ghost ? ghost.currentTime : 0);
     try { host.playNext(); } finally { host.state._isNaturalEnding = false; ownStart = false; }
     phase = 'blending';

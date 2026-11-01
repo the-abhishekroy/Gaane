@@ -133,3 +133,19 @@ test('QQ style header (Title - Artist, then credits) is dropped as a whole', () 
   ];
   assert.deepStrictEqual(L.stripCreditLines(lines).map((l) => l.text), ['First things first']);
 });
+
+test('plain text never wins while a synced answer is still possible, however early it arrives', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const plain = { kind: 'plain', lines: [{ time: -1, text: 'x', words: null }, { time: -1, text: 'y', words: null }] };
+  const line = { kind: 'line', lines: [{ time: 1000, text: 'x', words: null }, { time: 4000, text: 'y', words: null }] };
+  const r = await L.fetchLyrics({ title: 't', artist: 'a', durationMs: 60000 }, {
+    providers: [
+      { name: 'plain-first-and-fast', run: async () => plain },
+      { name: 'synced-but-slow', run: async () => { await wait(4200); return line; } }
+    ]
+  });
+  assert.strictEqual(r.source, 'synced-but-slow');
+  assert.strictEqual(r.kind, 'line');
+  const only = await L.fetchLyrics({ title: 't', artist: 'a', durationMs: 60000 }, { providers: [{ name: 'p', run: async () => plain }, { name: 'none', run: async () => null }] });
+  assert.strictEqual(only.kind, 'plain');
+});

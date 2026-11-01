@@ -7,7 +7,7 @@
 
 const UA = 'Gaane/1.2 (https://www.abhishekkroy.me)';
 const HTTP_TIMEOUT_MS = 5000;
-const RACE_TIMEOUT_MS = 9000;
+const RACE_TIMEOUT_MS = 12000;
 const LINE_GRACE_MS = 1800; // after a line-synced hit, how long to wait for a word-timed one
 
 async function httpGet(url, { timeout = HTTP_TIMEOUT_MS, headers } = {}) {
@@ -575,7 +575,7 @@ const PROVIDERS = [
  * Race every provider. Returns { lrc, kind, source } or null.
  * Resolves immediately on a word-timed answer, ~1.8 s after the first line-synced one, or when all finish.
  */
-function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, grace = LINE_GRACE_MS, priorityWait = 450 } = {}) {
+function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, perProvider = 6500 } = {}) {
   const q = {
     title: query.title || '', artist: query.artist || '',
     durationMs: Number(query.durationMs) > 0 ? Number(query.durationMs) : 0,
@@ -587,45 +587,34 @@ function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, 
   // An edition of the song that is longer than this one cannot be this recording's timing.
   const lastMs = (lines) => Math.max(0, ...lines.map((l) => Math.max(l.time, l.words && l.words.length ? l.words[l.words.length - 1].e : 0)));
   const plausible = (a) => !q.durationMs || lastMs(a.lines) <= q.durationMs + 4000;
-  return new Promise((resolve) => {
-    let pending = providers.length; let settled = false;
-    let line = null; let plain = null; let graceTimer = null; let priorityTimer = null;
-    const words = [];                                    // word-timed answers, with their provider's rank
-    const finish = (r) => {
-      if (settled) return;
-      settled = true; clearTimeout(graceTimer); clearTimeout(priorityTimer); clearTimeout(hard);
-      resolve(r ? { lrc: toLrc(r.lines), kind: r.kind, source: r.source } : null);
-    };
-    const bestWord = () => {
-      const ok = words.filter((w) => plausible(w));
-      const pool = (ok.length ? ok : words).sort((a, b) => a.rank - b.rank);
-      return pool[0] || null;
-    };
-    const best = () => bestWord() || line || plain;
-    const hard = setTimeout(() => finish(best()), timeout);
-    providers.forEach((p, rank) => {
-      Promise.resolve().then(() => p.run(q, ctx)).catch(() => null).then((a) => {
-        pending--;
-        if (a && !settled) {
-          const r = { ...a, source: p.name, rank };
-          if (a.kind === 'word') {
-            words.push(r);
-            // the best-ranked provider that sends a usable answer wins at once; otherwise give the better ones a moment
-            if (rank === 0 && plausible(r)) return finish(r);
-            if (!priorityTimer) priorityTimer = setTimeout(() => finish(best()), priorityWait);
-          } else if (a.kind === 'line' && !line) {
-            line = r;
-            if (!graceTimer) graceTimer = setTimeout(() => finish(best()), grace);
-          } else if (a.kind === 'plain' && !plain) {
-            plain = r;
-            // plain text is the last resort: do not hold it back for slow providers longer than a few seconds
-            if (!line && !words.length) setTimeout(() => { if (!settled && !line && !words.length) finish(plain); }, 3500);
-          }
-        }
-        if (pending === 0) finish(best());
-      });
-    });
-    if (!providers.length) finish(null);
+  const done = (r) => (r ? { lrc: toLrc(r.lines), kind: r.kind, source: r.source } : null);
+
+  // BitChord's rule (LyricsRepository): every source is asked at once, but the answers are taken in priority order.
+  // A source further down never wins just because it answered first; the first synced answer in order wins, and
+  // plain text is only what is left when nothing synced was found.
+  const jobs = providers.map((p) => {
+    const run = Promise.resolve().then(() => p.run(q, ctx)).catch(() => null);
+    const capped = Promise.race([run, new Promise((r) => setTimeout(() => r(null), perProvider))]);
+    return capped.then((a) => (a ? { ...a, source: p.name } : null));
+  });
+  const walk = (async () => {
+    let tooLong = null, plain = null;
+    for (const job of jobs) {
+      const a = await job;
+      if (!a) continue;
+      if (a.kind === 'plain') { plain = plain || a; continue; }
+      if (!plausible(a)) { tooLong = tooLong || a; continue; }
+      return a;
+    }
+    return tooLong || plain;
+  })();
+  return Promise.race([walk, new Promise((r) => setTimeout(() => r('timeout'), timeout))]).then(async (r) => {
+    if (r === 'timeout') {
+      // out of time: whatever finished, best first
+      const got = (await Promise.all(jobs.map((j) => Promise.race([j, Promise.resolve(null)])))).filter(Boolean);
+      return done(got.find((a) => a.kind !== 'plain' && plausible(a)) || got.find((a) => a.kind !== 'plain') || got[0] || null);
+    }
+    return done(r);
   });
 }
 

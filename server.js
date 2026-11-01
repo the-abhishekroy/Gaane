@@ -2879,6 +2879,7 @@ const TOKEN_PROTECTED_ROUTES = new Set([
   '/api/search',
   '/api/artist',
   '/api/lyrics',
+  '/api/lyrics-sources',
   '/api/download',
   '/api/spotify-import',
   '/api/spotify-auth-start',
@@ -2967,6 +2968,7 @@ async function handleLyrics(req, res, title, artist, allowOnline = true, extra =
   };
 
   try {
+  const onlyProvider = extra.only && lyricsProviders.PROVIDERS.some((p) => p.name === extra.only) ? extra.only : '';
   let customPath = getCustomLyricsPath(title, artist);
   if (!fs.existsSync(customPath) && /^[\x00-\x7F]*$/.test((title || '') + (artist || ''))) {
     const legacyPath = legacyCustomLyricsPath(title, artist);
@@ -2975,7 +2977,7 @@ async function handleLyrics(req, res, title, artist, allowOnline = true, extra =
     }
   }
 
-  if (fs.existsSync(customPath)) {
+  if (!onlyProvider && fs.existsSync(customPath)) {
     try {
       const customLyrics = await fs.promises.readFile(customPath, 'utf-8');
       if (lyricsCache.get(cacheKey) === inFlightEntry) {
@@ -2986,7 +2988,7 @@ async function handleLyrics(req, res, title, artist, allowOnline = true, extra =
   }
 
   const fetchedLyricsPath = getFetchedLyricsPath(title, artist);
-  if (fs.existsSync(fetchedLyricsPath)) {
+  if (!onlyProvider && fs.existsSync(fetchedLyricsPath)) {
     try {
       const diskLyrics = await fs.promises.readFile(fetchedLyricsPath, 'utf-8');
       // Word-timed results are kept; weaker ones are retried after 12 h in case a better source has it now.
@@ -3017,7 +3019,7 @@ async function handleLyrics(req, res, title, artist, allowOnline = true, extra =
     let raced = null;
     for (const v of variants) {
       if (raced || (raced === null && variants.indexOf(v) > 0 && Date.now() - started > 12000)) break;
-      raced = await lyricsProviders.fetchLyrics({ ...base, ...v });
+      raced = await lyricsProviders.fetchLyrics({ ...base, ...v }, onlyProvider ? { providers: lyricsProviders.PROVIDERS.filter((p) => p.name === onlyProvider) } : undefined);
     }
     const rawLyrics = raced ? `[src:${raced.source}|${raced.kind}]\n${raced.lrc}` : await fetchLyricsDirect(title, artist);
     if (rawLyrics && rawLyrics.trim().length > 0) {
@@ -5109,12 +5111,17 @@ const server = http.createServer(async (req, res) => {
     return handleSaveCustomLyrics(req, res, title, artist);
   }
 
+  if (parsedUrl.pathname === '/api/lyrics-sources') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true, sources: lyricsProviders.PROVIDERS.map((p) => p.name) }));
+  }
+
   if (parsedUrl.pathname === '/api/lyrics') {
     const title = parsedUrl.query.title || '';
     const artist = parsedUrl.query.artist || '';
     const allowOnline = parsedUrl.query.online !== '0';
     const durationMs = Math.round(parseFloat(parsedUrl.query.duration || '0') * 1000) || 0;
-    return handleLyrics(req, res, title, artist, allowOnline, { durationMs, album: parsedUrl.query.album || '', videoId: parsedUrl.query.videoId || '' });
+    return handleLyrics(req, res, title, artist, allowOnline, { durationMs, album: parsedUrl.query.album || '', videoId: parsedUrl.query.videoId || '', only: String(parsedUrl.query.only || '') });
   }
 
   res.writeHead(404);

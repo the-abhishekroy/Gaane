@@ -3180,11 +3180,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncTvLayout(!!isEmpty);
   }
 
-  async function loadSyncedLyrics(title, artist, token) {
+  async function loadSyncedLyrics(title, artist, token, only = '') {
     if (el.lyricsContainer) {
       el.lyricsContainer.scrollTop = 0;
       el.lyricsContainer.style.transition = 'opacity 200ms cubic-bezier(0.2, 0, 0, 1)';
-      el.lyricsContainer.style.opacity = '0';
+      // say so while the lyrics are being found, instead of showing nothing
+      el.lyricsContainer.innerHTML = '<div class="lyrics-loading">Lyrics are loading…</div>';
+      el.lyricsContainer.style.opacity = '1';
     }
     if (typeof lyricsScrollRaf !== 'undefined' && lyricsScrollRaf) {
       cancelAnimationFrame(lyricsScrollRaf);
@@ -3198,7 +3200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const onlineParam = getAdv('online_lyrics', true) ? '1' : '0';
-      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}&duration=${encodeURIComponent((state.currentTrack && state.currentTrack.duration) || (el.nativeAudio && el.nativeAudio.duration) || 0)}&album=${encodeURIComponent((state.currentTrack && state.currentTrack.album) || '')}&videoId=${encodeURIComponent((state.currentTrack && state.currentTrack.platform !== 'local' && state.currentTrack.id) || '')}`);
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}&duration=${encodeURIComponent((state.currentTrack && state.currentTrack.duration) || (el.nativeAudio && el.nativeAudio.duration) || 0)}&album=${encodeURIComponent((state.currentTrack && state.currentTrack.album) || '')}&videoId=${encodeURIComponent((state.currentTrack && state.currentTrack.platform !== 'local' && state.currentTrack.id) || '')}${only ? '&only=' + encodeURIComponent(only) : ''}`);
       const data = await res.json();
 
       if (token !== state.loadToken || (state.currentTrack && (state.currentTrack.title || '') !== title)) return;
@@ -3886,6 +3888,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
   }
   function lyricsNow() {
+    // the hand-over clock belongs to the few seconds of a blend; if anything left it behind, never let it freeze the lyrics
+    if (state._lyricsClock && Date.now() - (state._deferAt || 0) > 20000) {
+      state._lyricsClock = null; state._deferTrackUI = false;
+      const f = state._pendingTrackUI; state._pendingTrackUI = null; if (f) { try { f(); } catch (e) {} }
+    }
     const base = state._lyricsClock ? state._lyricsClock() : (el.nativeAudio ? el.nativeAudio.currentTime : 0);
     return base - lyricsLatency() + 0.03 + lyricsOffsetMs() / 1000;
   }
@@ -15341,6 +15348,140 @@ document.addEventListener('DOMContentLoaded', async () => {
     paint();
   })();
 
+  // Account menu (top right): who is signed in, add or switch the account, disconnect, settings --------------------
+  (() => {
+    const btn = document.getElementById('btn-account');
+    const menu = document.getElementById('account-menu');
+    const img = document.getElementById('account-avatar');
+    const icon = document.getElementById('account-icon');
+    if (!btn || !menu) return;
+    let info = null, open = false;
+    const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    async function load() {
+      try {
+        const d = await (await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-account`)).json();
+        info = d.connected ? (d.account || { name: 'YouTube Music account', handle: '', photo: '' }) : null;
+      } catch (e) { /* keep what is shown */ }
+      paintButton();
+      if (open) render();
+    }
+    function paintButton() {
+      const ok = !!(info && info.photo);
+      if (img) { img.classList.toggle('hidden', !ok); if (ok) img.src = info.photo; }
+      if (icon) icon.style.display = ok ? 'none' : '';
+      btn.classList.toggle('signed-in', !!info);
+    }
+    function render() {
+      if (info) {
+        menu.innerHTML = `
+          <div class="am-title">Switch account</div>
+          ${info.handle ? `<div class="am-handle">${esc(info.handle)}</div>` : ''}
+          <div class="am-row current">
+            <span class="am-photo" style="${info.photo ? `background-image:url('${esc(info.photo)}')` : ''}"></span>
+            <span class="am-text"><b>${esc(info.name)}</b><small>${esc(info.handle || 'YouTube Music')}</small></span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <button class="am-row" data-act="add"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg><span class="am-text"><b>Add account</b></span></button>
+          <button class="am-row" data-act="manage"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6"/><circle cx="18" cy="17" r="3"/></svg><span class="am-text"><b>Manage accounts</b></span></button>
+          <button class="am-row" data-act="settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span class="am-text"><b>Settings</b></span></button>`;
+      } else {
+        menu.innerHTML = `
+          <div class="am-title">YouTube Music</div>
+          <div class="am-note">Sign in to see your own recommendations, history and liked songs.</div>
+          <button class="am-row primary" data-act="signin"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg><span class="am-text"><b>Sign in</b></span></button>
+          <button class="am-row" data-act="settings"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8M1 12h4M19 12h4M4.2 19.8L7 17M17 7l2.8-2.8"/></svg><span class="am-text"><b>Settings</b></span></button>`;
+      }
+    }
+    function setOpen(v) {
+      open = !!v;
+      menu.classList.toggle('hidden', !open);
+      if (open) { render(); load(); }
+    }
+    btn.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!open); });
+    document.addEventListener('click', (e) => { if (open && !menu.contains(e.target) && !btn.contains(e.target)) setOpen(false); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) setOpen(false); }, true);
+    menu.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-act]');
+      if (!b) return;
+      const act = b.dataset.act;
+      setOpen(false);
+      if (act === 'signin' || act === 'add') openYtmConnectDialog();
+      else if (act === 'settings') switchView('settings');
+      else if (act === 'manage') {
+        // one account at a time: managing means switching to another or signing out of this one
+        menu.classList.remove('hidden'); open = true;
+        menu.innerHTML = `<div class="am-title">Manage account</div><div class="am-note">Gaane keeps the one account you signed in with. Signing out removes it from this Mac; the next sign-in picks any account you like.</div>
+          <button class="am-row danger" data-act="signout"><span class="am-text"><b>Sign out of ${esc((info && info.name) || 'YouTube Music')}</b></span></button>
+          <button class="am-row" data-act="back"><span class="am-text"><b>Back</b></span></button>`;
+      } else if (act === 'signout') { await disconnectYtm(null); info = null; paintButton(); }
+      else if (act === 'back') { setOpen(true); }
+    });
+    window.__refreshAccount = load;
+    setTimeout(load, 2500);
+    setInterval(() => { load(); }, 5 * 60 * 1000);
+  })();
+
+  // Lyrics source picker (like BitChord's "Choose lyrics provider") and the "Mixing" badge --------------------------
+  (() => {
+    let names = null;
+    async function sources() {
+      if (names) return names;
+      try { names = (await (await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics-sources`)).json()).sources || []; } catch (e) { names = []; }
+      return names;
+    }
+    function paintCredit() {
+      const src = state.lyricsSource && state.lyricsSource.source;
+      const t = src ? `Lyrics by ${src}` : (state.syncedLyrics && state.syncedLyrics.length ? 'Lyrics' : 'No lyrics yet');
+      const e = document.getElementById('tvk-lyrics-credit'); if (e) e.textContent = t;
+      const s = document.getElementById('btn-lyrics-source'); if (s) s.title = `${t}. Choose the lyrics source`;
+    }
+    setInterval(paintCredit, 800);
+    async function openSheet() {
+      if (document.getElementById('lyrics-source-sheet')) return;
+      const t = state.currentTrack;
+      if (!t) { showToast('Play a song first'); return; }
+      const list = await sources();
+      const cur = state.lyricsSource && state.lyricsSource.source;
+      const wrap = document.createElement('div');
+      wrap.id = 'lyrics-source-sheet'; wrap.className = 'lyrics-source-sheet';
+      wrap.innerHTML = '<div class="lyrics-source-card"><h3>Choose lyrics provider</h3></div>';
+      const card = wrap.firstChild;
+      list.forEach((name) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'ls-row' + (name === cur ? ' current' : '');
+        b.innerHTML = `<span class="ls-ico">${name === cur ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>'}</span><span class="ls-text"><b>${name}</b><small>${name === cur ? 'Current provider' : 'Tap to fetch'}</small></span>`;
+        b.addEventListener('click', async () => {
+          if (name === cur) { wrap.remove(); return; }
+          const sm = b.querySelector('small'); sm.textContent = 'Searching…';
+          try {
+            const q = `title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&online=1&duration=${encodeURIComponent(t.duration || 0)}&album=${encodeURIComponent(t.album || '')}&videoId=${encodeURIComponent(t.platform !== 'local' ? (t.id || '') : '')}&only=${encodeURIComponent(name)}`;
+            const d = await (await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?${q}`)).json();
+            if (d && d.success && d.lyrics && d.lyrics.trim()) { wrap.remove(); loadSyncedLyrics(t.title, t.artist, state.loadToken, name); }
+            else sm.textContent = 'No lyrics from this source';
+          } catch (e) { sm.textContent = 'Could not reach this source'; }
+        });
+        card.appendChild(b);
+      });
+      wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) wrap.remove(); });
+      document.body.appendChild(wrap);
+    }
+    document.getElementById('btn-lyrics-source')?.addEventListener('click', openSheet);
+    document.getElementById('btn-tvk-lyrics-source')?.addEventListener('click', openSheet);
+
+    const badge = document.getElementById('mix-badge');
+    setInterval(() => {
+      if (!badge) return;
+      const on = !!(window.GaaneMix && GaaneMix.isBlending && GaaneMix.isBlending());
+      badge.classList.toggle('hidden', !on);
+      if (on) {
+        const tr = document.getElementById('scrubber-track');
+        const r = tr ? tr.getBoundingClientRect() : null;
+        if (state.isTvKaraokeOpen) { badge.style.left = '50%'; badge.style.top = '24px'; badge.style.transform = 'translateX(-50%)'; }
+        else if (r) { badge.style.left = (r.left + r.width / 2) + 'px'; badge.style.top = (r.top - 26) + 'px'; badge.style.transform = 'translateX(-50%)'; }
+      }
+    }, 300);
+  })();
+
   // Queue panel (Up next), laid out like BitChord's: Now playing, the songs coming up, an AutoPlay section for the
   // similar songs added for you, drag to reorder, remove with the cross, and shuffle / repeat / AutoPlay at the bottom.
   (() => {
@@ -15723,6 +15864,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) { await new Promise((r) => setTimeout(r, 900)); }
     }
     updateYtmUi();
+    if (window.__refreshAccount) window.__refreshAccount();
     return ytmState.connected;
   }
 

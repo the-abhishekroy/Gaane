@@ -99,6 +99,14 @@
         </button>
       </div>
     </div>
+
+    <div class="account-wrap">
+      <button class="account-btn" id="btn-account" title="Account" aria-label="Account" aria-haspopup="true">
+        <img id="account-avatar" class="hidden" alt="">
+        <svg id="account-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      </button>
+      <div class="account-menu hidden" id="account-menu" role="menu"></div>
+    </div>
   </div>
 
   <div class="app-layout">
@@ -1853,6 +1861,9 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               <span>Sync</span>
             </button>
+            <button class="lyrics-action-btn" id="btn-lyrics-source" title="Choose the lyrics source" aria-label="Lyrics source">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20z"></path></svg>
+            </button>
             <button class="lyrics-action-btn hidden" id="btn-translate-lyrics" title="Translate lyrics" aria-label="Translate lyrics">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12.87 15.07l-2.54-2.51.03-.03c1.74-1.94 2.98-4.17 3.71-6.53H17V4h-7V2H8v2H1v1.99h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.11 5.02L4 19l5-5 3.11 3.11.76-2.04zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2l-4.5-12zm-2.62 7l1.62-4.33L19.12 17h-3.24z"/></svg>
             </button>
@@ -2925,6 +2936,9 @@
         <button type="button" class="tvk-pill-btn" id="btn-lyric-offset-reset" style="margin-top:6px">Reset</button>
       </div>
       </details>
+      <details class="tvk-sec"><summary>Lyrics source</summary>
+      <div class="tvk-row"><span class="tvk-label" id="tvk-lyrics-credit">Lyrics</span><button type="button" class="tvk-pill-btn" id="btn-tvk-lyrics-source" style="flex:0 0 auto">Choose source</button></div>
+      </details>
       <details class="tvk-sec" open><summary>Live backdrop</summary>
       <div class="tvk-row">
         <span class="tvk-label">Live backdrop</span>
@@ -3162,6 +3176,7 @@
       </div>
     </div>
   </aside>
+  <div class="mix-badge hidden" id="mix-badge">Mixing</div>
   <div class="nerd-stats hidden" id="nerd-stats" aria-hidden="true"></div>
   <script src="live-backdrop.js"></script>
   <script src="verse-view.js"></script>
