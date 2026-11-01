@@ -110,18 +110,20 @@ function attr(tag, name) {
 }
 
 function makeWords(runs) {
-  // runs: {s, e, text, spaceBefore}. Syllables without whitespace between merge into one word.
+  // runs: {s, e, text, spaceBefore}. Syllables without whitespace between them merge into one word.
   const words = [];
+  let prevEndsSpace = true;
   for (const r of runs) {
     const text = r.text;
-    if (!text.trim()) continue;
+    if (!text.trim()) { prevEndsSpace = true; continue; }
     const last = words[words.length - 1];
-    if (last && !r.spaceBefore && !/\s$/.test(last.t) && !/^\s/.test(text)) {
+    if (last && !r.spaceBefore && !prevEndsSpace && !/^\s/.test(text)) {
       last.t += text.trim();
       last.e = Math.max(last.e, r.e);
     } else {
       words.push({ s: r.s, e: r.e, t: text.trim() });
     }
+    prevEndsSpace = /\s$/.test(text);
   }
   return words;
 }
@@ -199,6 +201,82 @@ function parseLrc(text) {
   const timed = lines.some((l) => l.time >= 0);
   if (timed) lines.sort((a, b) => (a.time < 0 ? 1 : b.time < 0 ? -1 : a.time - b.time));
   return lines;
+}
+
+
+// ---- QQ (QRC) / NetEase (YRC) karaoke lines: "[start,dur]word(start,dur)word(start,dur)" ------------------------
+const KARAOKE_LINE = /^\[(\d{1,8}),(\d{1,8})\](.*)$/;
+const PREFIX_WORD = /\((\d{1,8}),(\d{1,8})(?:,\d{1,8})?\)([^()]*)/g;
+const SUFFIX_WORD = /([^()]*)\((\d{1,8}),(\d{1,8})(?:,\d{1,8})?\)/g;
+const KARAOKE_TIME = /\(\d{1,8},\d{1,8}(?:,\d{1,8})?\)/g;
+
+function karaokeContent(raw) {
+  const m = /LyricContent\s*=\s*"([^"]*)"/i.exec(raw);
+  return m ? m[1].replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') : raw;
+}
+function looksLikeKaraoke(raw) {
+  return karaokeContent(raw).split(/\r?\n/).some((l) => {
+    const body = (KARAOKE_LINE.exec(l.trim()) || [])[3];
+    return !!body && (new RegExp(PREFIX_WORD.source).test(body) || new RegExp(SUFFIX_WORD.source).test(body));
+  });
+}
+function parseKaraoke(raw) {
+  const rows = [];
+  for (const src of karaokeContent(raw).split(/\r?\n/)) {
+    const m = KARAOKE_LINE.exec(src.trim());
+    if (!m) continue;
+    const lineStart = Number(m[1]), lineDur = Number(m[2]), body = m[3];
+    const toRun = (text, st, du) => ({ s: Number(st), e: Number(st) + Number(du), text: decodeEntities(text), spaceBefore: /^\s/.test(text) });
+    const pre = makeWords([...body.matchAll(PREFIX_WORD)].map((x) => toRun(x[3], x[1], x[2])));
+    const suf = makeWords([...body.matchAll(SUFFIX_WORD)].map((x) => toRun(x[1], x[2], x[3])));
+    const len = (w) => w.reduce((n, x) => n + x.t.length, 0);
+    const words = len(pre) >= len(suf) ? pre : suf;
+    if (!words.length) continue;
+    const text = decodeEntities(body.replace(KARAOKE_TIME, '')).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    rows.push({ time: Math.min(lineStart, words[0].s), end: lineDur > 0 ? lineStart + lineDur : null, text, words });
+  }
+  return rows.sort((a, b) => a.time - b.time);
+}
+
+// Providers wrap the lyric text in JSON envelopes of different shapes; find the text, whatever it is called.
+const CONTENT_KEYS = ['ttml', 'ttmlContent', 'lyrics', 'lrc', 'content', 'text', 'plainLyrics', 'syncedLyrics', 'lyric', 'data', 'result', 'response'];
+function extractText(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const t = value.trim();
+    try { const nested = JSON.parse(t); if (nested && typeof nested === 'object') return extractText(nested); } catch (e) { /* plain text */ }
+    return t;
+  }
+  if (Array.isArray(value)) return value.map(extractText).filter(Boolean).join('\n') || null;
+  if (typeof value === 'object') {
+    if (value.isError === true || value.ok === false || (value.error && value.error !== false && value.error !== '')) return null;
+    for (const k of CONTENT_KEYS) { const f = k in value ? extractText(value[k]) : null; if (f) return f; }
+  }
+  return null;
+}
+function unwrapText(raw) {
+  const v = String(raw || '').replace(/﻿/g, '').trim();
+  if (!v) return null;
+  try { return (extractText(JSON.parse(v)) || '').trim() || null; } catch (e) { return v; }
+}
+function unescapeTtml(v) {
+  return /&lt;tt/i.test(v) ? v.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&') : v;
+}
+// Whatever a provider sent: TTML, karaoke lines, enhanced LRC, LRC, or plain text.
+function parseAny(raw) {
+  const t = unwrapText(raw);
+  if (!t) return null;
+  const c = unescapeTtml(t);
+  let lines;
+  if (/<tt(?:\s|>)/i.test(c) || /ns\/ttml/i.test(c)) lines = parseTtml(c);
+  else if (looksLikeKaraoke(c)) lines = parseKaraoke(c);
+  else if (c.trimStart().startsWith('<')) lines = [];
+  else {
+    if (/\b(?:lyrics? (?:not found|unavailable)|no lyrics)\b/i.test(c) && c.length < 120) return null;
+    lines = parseLrc(c).filter((l) => !/^\[[^\]]*\]$/.test(l.text || ''));        // "[Chorus]" headers are not lyrics
+  }
+  return answer(lines);
 }
 
 function fmt(ms) {
@@ -353,12 +431,7 @@ function lyricsPlus(q) {
 
 async function betterLyricsAt(endpoint, q) {
   const body = await httpGet(urlWith(endpoint, { s: q.title, a: q.artist, d: seconds(q.durationMs), al: q.album }));
-  if (!body) return null;
-  const j = json(body);
-  const ttml = j && (j.ttml || j.lyrics || j.data);
-  if (typeof ttml === 'string' && ttml.includes('<')) return answer(parseTtml(ttml));
-  if (typeof ttml === 'string') return answer(parseLrc(ttml));
-  return body.includes('<tt') ? answer(parseTtml(body)) : null;
+  return body ? parseAny(body) : null;
 }
 const betterLyrics = (q) => betterLyricsAt('https://lyrics-api.boidu.dev/getLyrics', q);
 
@@ -370,6 +443,66 @@ async function unison(q) {
   if (String(data.format || '').toLowerCase() === 'ttml') return answer(parseTtml(text));
   if (String(data.syncType || '').toLowerCase() === 'plain') return answer(parseLrc(text).map((l) => ({ ...l, time: -1 })));
   return answer(parseLrc(text));
+}
+
+
+// ---- BetterLyrics (QQ): QQ Music karaoke timings through BetterLyrics -----------------------------------------------
+const betterLyricsPortato = (q) => httpGet(urlWith('https://lyrics-api.boidu.dev/qq/getLyrics', { s: q.title, a: q.artist, d: seconds(q.durationMs), al: q.album })).then((b) => (b ? parseAny(b) : null));
+
+// ---- KuGou: whole lines, strong outside the English catalogue ----------------------------------------------------------
+const stripParen = (s) => String(s).replace(/[(（].*?[)）]/g, '').trim() || String(s);
+function stripKugouCredits(lrc) {
+  const lines = lrc.split(/\r?\n/).filter((l) => /^\[\d{2}:\d{2}\.\d{2,3}\].*/.test(l));
+  if (!lines.length) return '';
+  const credit = /.+\][^[]+[:：].+/;
+  let head = 0;
+  for (let i = Math.min(30, lines.length - 1); i >= 0; i--) if (credit.test(lines[i])) { head = i + 1; break; }
+  const body = lines.slice(head);
+  let tail = 0;
+  for (let i = 0; i <= Math.min(30, body.length - 1); i++) if (credit.test(body[body.length - 1 - i])) { tail = i + 1; break; }
+  return body.slice(0, body.length - tail).join('\n');
+}
+async function kugou(q) {
+  const keyword = `${stripParen(q.title)} - ${stripParen(q.artist)}`.trim();
+  const secs = Math.floor(q.durationMs / 1000);
+  const songs = json(await httpGet(urlWith('https://mobileservice.kugou.com/api/v3/search/song', { version: 9108, plat: 0, pagesize: 8, showtype: 0, keyword })));
+  const hashes = ((songs && songs.data && songs.data.info) || [])
+    .filter((x) => secs <= 0 || Math.abs((x.duration ?? -1) - secs) <= 8)
+    .sort((a, b) => Math.abs((a.duration || 0) - secs) - Math.abs((b.duration || 0) - secs)).map((x) => x.hash);
+  let cand = null;
+  for (const hash of hashes) {
+    const r = json(await httpGet(urlWith('https://lyrics.kugou.com/search', { ver: 1, man: 'yes', client: 'pc', hash })));
+    cand = r && r.candidates && r.candidates[0];
+    if (cand) break;
+  }
+  if (!cand) {
+    const r = json(await httpGet(urlWith('https://lyrics.kugou.com/search', { ver: 1, man: 'yes', client: 'pc', keyword, duration: secs > 0 ? secs * 1000 : null })));
+    cand = r && r.candidates && r.candidates[0];
+  }
+  if (!cand) return null;
+  const dl = json(await httpGet(urlWith('https://lyrics.kugou.com/download', { fmt: 'lrc', charset: 'utf8', client: 'pc', ver: 1, id: cand.id, accesskey: cand.accesskey })));
+  if (!dl || !dl.content) return null;
+  const lrc = stripKugouCredits(Buffer.from(dl.content, 'base64').toString('utf8'));
+  if (!lrc || /纯音乐.*欣赏/.test(lrc.replace(/\[\d{2}:\d{2}\.\d{2,3}\]/g, ''))) return null;
+  return answer(parseLrc(lrc));
+}
+
+// ---- YouTube Music's own Lyrics tab (plain text), for what the lyric databases do not have -------------------------------
+async function youtubeMusic(q) {
+  if (!/^[\w-]{11}$/.test(q.videoId || '')) return null;
+  let text = null;
+  try { text = await require('./ytmusic').youtubeMusicLyrics(q.videoId); } catch (e) { return null; }
+  return text ? answer(text.split(/\r?\n/).map((t) => t.trim()).filter(Boolean).map((t) => ({ time: -1, end: null, text: t, words: null }))) : null;
+}
+
+// ---- lyrics.ovh: plain text for a large part of the English catalogue ----------------------------------------------------
+async function lyricsOvh(q) {
+  if (!q.artist || !q.title) return null;
+  const j = json(await httpGet(`https://api.lyrics.ovh/v1/${encodeURIComponent(q.artist)}/${encodeURIComponent(q.title)}`, { timeout: 6000 }));
+  const t = j && j.lyrics && String(j.lyrics).trim();
+  if (!t) return null;
+  const lines = t.split(/\r?\n/).map((x) => x.trim()).filter((x) => x && !/^\[[^\]]*\]$/.test(x)).map((x) => ({ time: -1, end: null, text: x, words: null }));
+  return lines.length > 3 ? answer(lines) : null;
 }
 
 async function lrclib(q) {
@@ -395,53 +528,74 @@ async function lrclib(q) {
 const PROVIDERS = [
   { name: 'lrc.red', run: (q, ctx) => lrcRed(q, ctx.get, ctx.bini) },
   { name: 'BiniLyrics', run: (q, ctx) => biniLyrics(q, ctx.get, ctx.bini) },
-  { name: 'LyricsPlus', run: (q) => lyricsPlus(q) },
   { name: 'BetterLyrics', run: (q) => betterLyrics(q) },
+  { name: 'BetterLyrics (QQ)', run: (q) => betterLyricsPortato(q) },
+  { name: 'LyricsPlus', run: (q) => lyricsPlus(q) },
   { name: 'Unison', run: (q) => unison(q) },
+  { name: 'KuGou', run: (q) => kugou(q) },
   { name: 'LRCLIB', run: (q) => lrclib(q) },
+  { name: 'YouTube Music', run: (q) => youtubeMusic(q) },
+  { name: 'lyrics.ovh', run: (q) => lyricsOvh(q) },
 ];
 
 /**
  * Race every provider. Returns { lrc, kind, source } or null.
  * Resolves immediately on a word-timed answer, ~1.8 s after the first line-synced one, or when all finish.
  */
-function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, grace = LINE_GRACE_MS } = {}) {
+function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, grace = LINE_GRACE_MS, priorityWait = 450 } = {}) {
   const q = {
     title: query.title || '', artist: query.artist || '',
     durationMs: Number(query.durationMs) > 0 ? Number(query.durationMs) : 0,
-    album: query.album || null, isrc: query.isrc || null,
+    album: query.album || null, isrc: query.isrc || null, videoId: query.videoId || '',
   };
   const ctx = { get: sharedGetter() };
   let biniPromise = null;
   ctx.bini = () => (biniPromise ||= biniIdentify(q).catch(() => null));
+  // An edition of the song that is longer than this one cannot be this recording's timing.
+  const lastMs = (lines) => Math.max(0, ...lines.map((l) => Math.max(l.time, l.words && l.words.length ? l.words[l.words.length - 1].e : 0)));
+  const plausible = (a) => !q.durationMs || lastMs(a.lines) <= q.durationMs + 4000;
   return new Promise((resolve) => {
     let pending = providers.length; let settled = false;
-    let line = null; let plain = null; let graceTimer = null;
+    let line = null; let plain = null; let graceTimer = null; let priorityTimer = null;
+    const words = [];                                    // word-timed answers, with their provider's rank
     const finish = (r) => {
       if (settled) return;
-      settled = true; clearTimeout(graceTimer); clearTimeout(hard);
+      settled = true; clearTimeout(graceTimer); clearTimeout(priorityTimer); clearTimeout(hard);
       resolve(r ? { lrc: toLrc(r.lines), kind: r.kind, source: r.source } : null);
     };
-    const best = () => line || plain;
+    const bestWord = () => {
+      const ok = words.filter((w) => plausible(w));
+      const pool = (ok.length ? ok : words).sort((a, b) => a.rank - b.rank);
+      return pool[0] || null;
+    };
+    const best = () => bestWord() || line || plain;
     const hard = setTimeout(() => finish(best()), timeout);
-    for (const p of providers) {
+    providers.forEach((p, rank) => {
       Promise.resolve().then(() => p.run(q, ctx)).catch(() => null).then((a) => {
         pending--;
         if (a && !settled) {
-          const r = { ...a, source: p.name };
-          if (a.kind === 'word') return finish(r);
-          if (a.kind === 'line' && !line) {
+          const r = { ...a, source: p.name, rank };
+          if (a.kind === 'word') {
+            words.push(r);
+            // the best-ranked provider that sends a usable answer wins at once; otherwise give the better ones a moment
+            if (rank === 0 && plausible(r)) return finish(r);
+            if (!priorityTimer) priorityTimer = setTimeout(() => finish(best()), priorityWait);
+          } else if (a.kind === 'line' && !line) {
             line = r;
             if (!graceTimer) graceTimer = setTimeout(() => finish(best()), grace);
-          } else if (a.kind === 'plain' && !plain) plain = r;
+          } else if (a.kind === 'plain' && !plain) {
+            plain = r;
+            // plain text is the last resort: do not hold it back for slow providers longer than a few seconds
+            if (!line && !words.length) setTimeout(() => { if (!settled && !line && !words.length) finish(plain); }, 3500);
+          }
         }
         if (pending === 0) finish(best());
       });
-    }
+    });
     if (!providers.length) finish(null);
   });
 }
 
 module.exports = {
-  _answer: answer, withGaps, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
+  parseAny, parseKaraoke, _answer: answer, withGaps, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
 };

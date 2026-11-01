@@ -186,11 +186,12 @@
 
   // Put the incoming song's beats on the outgoing song's beats. Done while the incoming deck is still silent.
   async function alignIncoming(A, B) {
+    const alignT0 = performance.now();
     const a = audio();
     a.playbackRate = baseRate * plan.rate;
     const seekTo = (t) => new Promise((res) => {
       const done = () => { clearTimeout(to); a.removeEventListener('seeked', done); res(); };
-      const to = setTimeout(done, 700);
+      const to = setTimeout(done, 280);
       a.addEventListener('seeked', done, { once: true });
       try { a.currentTime = Math.max(0, t); } catch (err) { done(); }
     });
@@ -202,13 +203,17 @@
     };
     // skip a silent start
     if (B.audibleStart > 0.4 && a.currentTime < B.audibleStart && B.audibleStart < 8) await seekTo(B.audibleStart);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // one correction at most, and none when the beats are already within 25 ms: every wait here is time the new song
+    // is silent while the old one is still playing
+    {
       const d = error();
-      if (Math.abs(d) < 0.012) break;
-      await seekTo(a.currentTime + d + 0.035);          // 35 ms: what a seek costs before sound flows again
-      await new Promise((r) => setTimeout(r, 90));
+      if (Math.abs(d) >= 0.025) {
+        await seekTo(a.currentTime + d + 0.035);        // 35 ms: what a seek costs before sound flows again
+        await new Promise((r) => setTimeout(r, 30));
+      }
     }
     plan.alignErrMs = Math.round(error() * PA / PB * 1000);
+    plan.alignMs = Math.round(performance.now() - alignT0);
   }
 
   async function onMainPlaying() {

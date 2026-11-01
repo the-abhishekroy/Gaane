@@ -11,6 +11,14 @@
 
 ---
 
+## What's new in 1.2.4
+
+- **Lyrics for far more songs.** Gaane now asks ten sources at once, in BitChord's order: lrc.red, BiniLyrics, BetterLyrics (Apple and QQ Music timings), LyricsPlus, Unison, KuGou, LRCLIB, YouTube Music's own Lyrics tab and lyrics.ovh. Titles in Hindi, Nepali and other scripts are no longer stripped bare before searching, and a song is tried under a shorter name if the full one finds nothing. A version of the lyrics that is longer than the song is rejected, and the best-ranked source wins.
+- **The play button no longer sticks on "loading"** after Automix hands over to the next song.
+- **Colours follow the cover.** The edge light and the live backdrop now use the cover's own colours in proportion, so a grey or brown cover is no longer painted bright green.
+- **Faster Automix.** The new song joins the blend about 30 ms after it starts instead of up to a second.
+- **The queue sits inside the app** over the lyrics card, in the app's own colours, shows song lengths and keeps at least ten songs coming with AutoPlay on.
+
 ## What's new in 1.2.3 / 1.2.2
 
 - **Sign in like a normal app.** Press Connect, sign in on Google's own page in a browser window (your default browser if it is Chrome, Brave, Edge or Arc; otherwise another one you have installed; Safari cannot be used for this step) that Gaane opens and closes for you. No cookie copying. The window is a private profile of its own, so the login is not changed behind Gaane's back and stays put.

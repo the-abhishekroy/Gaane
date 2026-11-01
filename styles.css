@@ -8149,3 +8149,17 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 .ytm-signin-more { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .ytm-signin-alt { border: 1px solid rgba(255,255,255,.16); background: transparent; color: inherit; border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
 .ytm-signin-alt:hover { background: rgba(255,255,255,.08); }
+
+/* queue panel docked into the app */
+.upnext.docked { backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 30; color: var(--md-sys-color-on-surface, #f1f1f4); transform: none; }
+.upnext.docked:not(.open) { opacity: 0; }
+.upnext.docked .upnext-head { padding: 18px 20px 8px; }
+.upnext.docked .upnext-head h3 { font-size: 20px; }
+.upnext.docked .upnext-body { padding: 4px 12px 10px; }
+.upnext.docked .un-row { padding: 8px 10px; border-radius: 14px; }
+.un-art { width: 52px; height: 52px; border-radius: 10px; }
+.un-text b { font-size: 15px; }
+.un-dur { font-size: 12px; opacity: .55; margin-right: 2px; font-variant-numeric: tabular-nums; }
+.un-section em { margin-left: auto; }
+.un-section.un-auto em { font-style: normal; font-weight: 400; font-size: 12px; opacity: .55; margin-left: auto; }
+.upnext.docked .upnext-foot { padding: 6px 16px 18px; }

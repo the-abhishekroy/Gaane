@@ -86,3 +86,40 @@ test('breaks of 4 s or more after a word-timed line become blank stamped lines',
   assert.match(lrc, /^\[00:00\.00\]\n\[00:06\.00\]/);
   assert.match(lrc, /\n\[00:07\.00\]\n\[00:20\.00\]/);
 });
+
+test('word-timed answers: a longer edition is rejected and the best-ranked provider wins', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const mk = (endMs) => ({ kind: 'word', lines: [{ time: 1000, text: 'a b', words: [{ s: 1000, e: 1500, t: 'a' }, { s: endMs - 500, e: endMs, t: 'b' }] }] });
+  const r = await L.fetchLyrics({ title: 't', artist: 'a', durationMs: 180000 }, {
+    priorityWait: 120,
+    providers: [
+      { name: 'top-but-too-long', run: async () => { await wait(60); return mk(260000); } },
+      { name: 'second', run: async () => { await wait(10); return mk(170000); } },
+      { name: 'third', run: async () => mk(171000) }
+    ]
+  });
+  assert.strictEqual(r.source, 'second');                      // the longer edition is not this recording, 'third' ranks lower
+  const r2 = await L.fetchLyrics({ title: 't', artist: 'a', durationMs: 180000 }, {
+    priorityWait: 150,
+    providers: [
+      { name: 'first', run: async () => { await wait(50); return mk(172000); } },
+      { name: 'fast', run: async () => mk(172000) }
+    ]
+  });
+  assert.strictEqual(r2.source, 'first');                      // a slightly later top-ranked answer still wins
+});
+
+test('QQ karaoke lines are read word by word, in either of the two layouts', () => {
+  const suffix = L.parseKaraoke('[1000,2000]Hello(1000,500) world(1500,1000)');
+  assert.deepStrictEqual(suffix[0].words.map((w) => w.t), ['Hello', 'world']);
+  assert.strictEqual(suffix[0].words[1].s, 1500);
+  const prefix = L.parseKaraoke('[5000,1500](5000,400)Good (5400,500)night');
+  assert.deepStrictEqual(prefix[0].words.map((w) => w.t), ['Good', 'night']);
+});
+
+test('parseAny reads whatever a provider sends and drops section headers and error text', () => {
+  assert.strictEqual(L.parseAny('{"lyrics":"[Chorus]\\n[00:01.00]one\\n[00:03.00]two"}').kind, 'line');
+  assert.strictEqual(L.parseAny('{"error":"not found"}'), null);
+  assert.strictEqual(L.parseAny('Lyrics not found'), null);
+  assert.strictEqual(L.parseAny('<?xml version="1.0"?><QrcInfos><Lyric_1 LyricContent="[1000,500]Hi(1000,250) there(1250,250)"/></QrcInfos>').kind, 'word');
+});

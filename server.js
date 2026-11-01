@@ -2796,23 +2796,19 @@ async function handleEncode(req, res, parsedUrl) {
 
 function sanitizeForLyrics(title, artist) {
   const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let cleanTitle = (title || '')
-  .replace(/[\u2018\u2019\u02bc']/g, '')
-  .replace(new RegExp('^\\s*' + escRe(String(artist || '').trim() || '\u0000') + '\\s*[-\u2013\u2014:]\\s*', 'i'), '')
-  .replace(/\[.*?\]|\(.*?\)/g, '')
-  .replace(/official\s*(music)?\s*video|official\s*audio|lyrics|hd|4k|remastered|visualizer|clip\s*officiel|video\s*clip/gi, '')
-  .replace(/ft\.?|feat\.?/gi, '')
-  .replace(/[^\w\s\u0400-\u04FF]/gi, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
-
-  let cleanArtist = (artist || '')
-  .replace(/\[.*?\]|\(.*?\)/g, '')
-  .replace(/- topic|vevo|records|official/gi, '')
-  .replace(/[^\w\s\u0400-\u04FF]/gi, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
-
+  // letters and digits of every script are kept (Devanagari, Arabic, Hangul...), only the packaging goes
+  const tidy = (x) => x.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const cleanTitle = tidy(String(title || '')
+    .replace(/[\u2018\u2019\u02bc']/g, '')
+    .replace(new RegExp('^\\s*' + escRe(String(artist || '').trim() || '\u0000') + '\\s*[-\u2013\u2014:]\\s*', 'i'), '')
+    .split(/\s[|\u2502]\s/)[0]
+    .replace(/\[.*?\]|\(.*?\)/g, '')
+    .replace(/official\s*(music)?\s*video|official\s*audio|lyric(al)?\s*video|lyrics?|\bhd\b|\b4k\b|remastered|visuali[sz]er|clip\s*officiel|video\s*clip|full\s*song/gi, '')
+    .replace(/\b(ft|feat)\b\.?.*$/i, ''));
+  const cleanArtist = tidy(String(artist || '')
+    .replace(/\[.*?\]|\(.*?\)/g, '')
+    .replace(/\s-\sTopic$/i, '')
+    .replace(/vevo|records|official/gi, ''));
   return { cleanTitle, cleanArtist };
 }
 
@@ -3003,9 +2999,19 @@ async function handleLyrics(req, res, title, artist, allowOnline = true, extra =
 
   try {
     const { cleanTitle, cleanArtist } = sanitizeForLyrics(title, artist);
-    const raced = await lyricsProviders.fetchLyrics({
-      title: cleanTitle || title, artist: cleanArtist || artist, durationMs: extra.durationMs, album: extra.album,
-    });
+    const videoId = /^[\w-]{11}$/.test(String(extra.videoId || '')) ? extra.videoId : '';
+    const base = { durationMs: extra.durationMs, album: extra.album, videoId };
+    // The same song can be listed under a longer or a shorter name; try the other spellings if the first finds nothing.
+    const bare = cleanTitle.replace(/\s+(live|remix|version|edit|acoustic|slowed|reverb|sped up).*$/i, '').trim();
+    const variants = [{ title: cleanTitle || title, artist: cleanArtist || artist }];
+    if (bare && bare !== cleanTitle) variants.push({ title: bare, artist: cleanArtist || artist });
+    if (cleanArtist) variants.push({ title: cleanTitle || title, artist: '' });
+    const started = Date.now();
+    let raced = null;
+    for (const v of variants) {
+      if (raced || (raced === null && variants.indexOf(v) > 0 && Date.now() - started > 12000)) break;
+      raced = await lyricsProviders.fetchLyrics({ ...base, ...v });
+    }
     const rawLyrics = raced ? `[src:${raced.source}|${raced.kind}]\n${raced.lrc}` : await fetchLyricsDirect(title, artist);
     if (rawLyrics && rawLyrics.trim().length > 0) {
       try {
@@ -5101,7 +5107,7 @@ const server = http.createServer(async (req, res) => {
     const artist = parsedUrl.query.artist || '';
     const allowOnline = parsedUrl.query.online !== '0';
     const durationMs = Math.round(parseFloat(parsedUrl.query.duration || '0') * 1000) || 0;
-    return handleLyrics(req, res, title, artist, allowOnline, { durationMs, album: parsedUrl.query.album || '' });
+    return handleLyrics(req, res, title, artist, allowOnline, { durationMs, album: parsedUrl.query.album || '', videoId: parsedUrl.query.videoId || '' });
   }
 
   res.writeHead(404);

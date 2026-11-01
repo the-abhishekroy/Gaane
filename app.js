@@ -3011,7 +3011,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const applyTrackUI = () => {
       updateNowPlayingUI(track);
-      updatePlayPauseButton(false, true);
+      // when the screen catches up mid-blend the song is already playing: do not put it back into "loading"
+      const nowPlaying = !!(el.nativeAudio && !el.nativeAudio.paused && el.nativeAudio.readyState > 2 && el.nativeAudio.currentTime > 0.2);
+      updatePlayPauseButton(nowPlaying, !nowPlaying);
+      if (el.trackLoadingOverlay && nowPlaying) el.trackLoadingOverlay.classList.add('hidden');
       loadSyncedLyrics(track.title, track.artist, currentToken);
     };
     if (state._deferTrackUI) {
@@ -3195,7 +3198,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       const onlineParam = getAdv('online_lyrics', true) ? '1' : '0';
-      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}&duration=${encodeURIComponent((state.currentTrack && state.currentTrack.duration) || (el.nativeAudio && el.nativeAudio.duration) || 0)}&album=${encodeURIComponent((state.currentTrack && state.currentTrack.album) || '')}`);
+      const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}&online=${onlineParam}&duration=${encodeURIComponent((state.currentTrack && state.currentTrack.duration) || (el.nativeAudio && el.nativeAudio.duration) || 0)}&album=${encodeURIComponent((state.currentTrack && state.currentTrack.album) || '')}&videoId=${encodeURIComponent((state.currentTrack && state.currentTrack.platform !== 'local' && state.currentTrack.id) || '')}`);
       const data = await res.json();
 
       if (token !== state.loadToken || (state.currentTrack && (state.currentTrack.title || '') !== title)) return;
@@ -5460,7 +5463,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           fetch(qInfoUrl).catch(() => {});
           // lyrics too, so they are on screen the moment the next song starts
           if (getAdv('online_lyrics', true)) {
-            fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&online=1&duration=${encodeURIComponent(nextTrack.duration || 0)}&album=${encodeURIComponent(nextTrack.album || '')}`).catch(() => {});
+            fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&online=1&duration=${encodeURIComponent(nextTrack.duration || 0)}&album=${encodeURIComponent(nextTrack.album || '')}&videoId=${encodeURIComponent(nextTrack.id || '')}`).catch(() => {});
           }
         }
       }
@@ -7159,7 +7162,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (prefetched.size > 200) prefetched.delete(prefetched.keys().next().value);
     try { await fetch(streamInfoUrlFor(t)); } catch (e) { prefetched.delete(key); }
     if (getAdv('online_lyrics', true)) {
-      fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&online=1&duration=${encodeURIComponent(t.duration || 0)}&album=${encodeURIComponent(t.album || '')}`).catch(() => {});
+      fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&online=1&duration=${encodeURIComponent(t.duration || 0)}&album=${encodeURIComponent(t.album || '')}&videoId=${encodeURIComponent(t.platform !== 'local' ? (t.id || '') : '')}`).catch(() => {});
     }
   }
   function schedulePrefetchUpcoming() {
@@ -15229,46 +15232,43 @@ document.addEventListener('DOMContentLoaded', async () => {
           const x = c.getContext('2d');
           x.drawImage(img, 0, 0, N, N);
           const d = x.getImageData(0, 0, N, N).data;
-          const BINS = 36;
-          const bins = Array.from({ length: BINS }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
-          let colourful = 0, total = 0, lumSum = 0;
+          // The cover's own colours, by how much of the picture they cover: a mostly grey photo gives muted colours,
+          // not an invented vivid hue.
+          const BINS = 24;
+          const bins = Array.from({ length: BINS }, () => ({ w: 0, n: 0, r: 0, g: 0, b: 0 }));
+          let total = 0, lumSum = 0, used = 0;
           for (let i = 0; i < d.length; i += 4) {
             const r = d[i], g = d[i + 1], b = d[i + 2];
             const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
             const v = mx / 255, sat = mx ? (mx - mn) / mx : 0;
             total++; lumSum += (r + g + b) / 765;
-            if (sat < 0.22 || v < 0.22) continue;
-            colourful++;
+            if (v < 0.16) continue;                                  // near black says nothing about the colour
             const dd = mx - mn;
-            let h = mx === r ? ((g - b) / dd) % 6 : mx === g ? (b - r) / dd + 2 : (r - g) / dd + 4;
+            let h = dd ? (mx === r ? ((g - b) / dd) % 6 : mx === g ? (b - r) / dd + 2 : (r - g) / dd + 4) : 0;
             h = (h * 60 + 360) % 360;
             const bi = Math.floor(h / (360 / BINS)) % BINS;
-            const w = sat * v;
+            const w = (0.25 + sat) * (0.4 + v);
             const bn = bins[bi];
-            bn.w += w; bn.r += r * w; bn.g += g * w; bn.b += b * w;
+            bn.w += w; bn.n++; bn.r += r; bn.g += g; bn.b += b; used++;
           }
+          const order = bins.map((bn, i) => ({ i, w: bn.w })).filter((o) => o.w > 0).sort((a, b) => b.w - a.w);
           const picked = [];
-          const order = bins.map((bn, i) => ({ i, w: bn.w + 0.5 * (bins[(i + 1) % BINS].w + bins[(i + BINS - 1) % BINS].w) })).sort((a, b) => b.w - a.w);
           for (const o of order) {
-            if (picked.length >= 5 || o.w <= 0) break;
-            if (picked.some(p => { const dh = Math.abs(p.i - o.i); return Math.min(dh, BINS - dh) < 3; })) continue;
-            if (picked.length && o.w < order[0].w * 0.12) break;
+            if (picked.length >= 4) break;
+            if (picked.some(p => { const dh = Math.abs(p.i - o.i); return Math.min(dh, BINS - dh) < 2; })) continue;
+            if (picked.length && o.w < order[0].w * 0.18) break;
             picked.push(o);
           }
           const out = picked.map((p) => {
-            let wr = 0, wg = 0, wb = 0, ww = 0;
-            for (let k = -1; k <= 1; k++) {
-              const bn = bins[(p.i + k + BINS) % BINS];
-              wr += bn.r; wg += bn.g; wb += bn.b; ww += bn.w;
-            }
-            const rgb = ww ? { r: wr / ww, g: wg / ww, b: wb / ww } : { r: 255, g: 255, b: 255 };
-            const hsl = rgbToHsl(Math.round(rgb.r), Math.round(rgb.g), Math.round(rgb.b));
-            return hslToHex(hsl.h, Math.max(72, hsl.s), Math.min(64, Math.max(52, hsl.l)));
+            const bn = bins[p.i];
+            const hsl = rgbToHsl(Math.round(bn.r / bn.n), Math.round(bn.g / bn.n), Math.round(bn.b / bn.n));
+            // lift only as much as needed to be seen on a dark screen; keep the picture's own saturation
+            return hslToHex(hsl.h, Math.min(92, Math.max(hsl.s * 1.12, 6)), Math.min(66, Math.max(44, hsl.l)));
           });
           let palette = out;
           if (!palette.length) {
             // grey / black-and-white cover: stay neutral
-            palette = lumSum / total > 0.5 ? ['#ffffff', '#c8c8cc'] : ['#e8e8ec', '#9a9aa2'];
+            palette = lumSum / Math.max(1, total) > 0.5 ? ['#ffffff', '#c8c8cc'] : ['#e8e8ec', '#9a9aa2'];
           } else if (palette.length === 1) {
             const q = hexToRgb(palette[0]);
             const h = rgbToHsl(q.r, q.g, q.b);
@@ -15316,11 +15316,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (edgeRetries++ < 4) {
           // cover not readable yet (e.g. still being extracted): try again shortly
           setTimeout(() => { if (edgeCoverKey === thumb) edgeCoverKey = ''; }, 1500);
+        } else {
+          // could not read the cover's pixels: use its overall accent rather than the last song's colours
+          edgePalette = [edgeColorA, edgeColorB];
         }
       });
     });
   }
   setInterval(syncEdgeGlow, 700);
+  window.__palette = (u) => extractCoverPalette(u);
+  window.__edgePalette = () => ({ palette: edgePalette, cover: edgeCoverKey, a: edgeColorA, b: edgeColorB });
 
   // Lyrics timing nudge for the current song (ambient settings panel) ---------------------------------------
   (() => {
@@ -15355,7 +15360,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ${handle}
         <span class="un-art" style="${img ? `background-image:url('${esc(img).replace(/'/g, '%27')}')` : ''}"></span>
         <span class="un-text"><b>${esc(t.title)}</b><small>${esc(t.artist)}</small></span>
-        ${bars}<button type="button" class="un-x" data-remove="${idx}" aria-label="Remove">&times;</button>
+        ${bars}${t.duration ? `<span class="un-dur">${formatDuration(t.duration)}</span>` : ''}<button type="button" class="un-x" data-remove="${idx}" aria-label="Remove">&times;</button>
       </div>`;
     }
 
@@ -15373,11 +15378,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const own = firstAuto < 0 ? upcoming : upcoming.slice(0, firstAuto);
       const auto = firstAuto < 0 ? [] : upcoming.slice(firstAuto);
       if (own.length) {
-        html += '<div class="un-section"><span>Next in queue</span></div>';
+        html += `<div class="un-section"><span>Next in queue</span><em>${own.length} song${own.length === 1 ? '' : 's'}</em></div>`;
         own.forEach((u) => { html += rowHtml(u.t, u.idx, 'item'); });
       }
       if (auto.length) {
-        html += '<div class="un-section un-auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.2 8.2a4 4 0 1 0 0 7.6c2.3-1.6 3.8-3.8 3.8-3.8s-1.5-2.2-3.8-3.8z"/><path d="M5.8 8.2a4 4 0 1 1 0 7.6C3.5 14.2 2 12 2 12s1.5-2.2 3.8-3.8z"/></svg><div><span>AutoPlay</span><small>Similar music, selected to play next</small></div></div>';
+        html += '<div class="un-section un-auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.2 8.2a4 4 0 1 0 0 7.6c2.3-1.6 3.8-3.8 3.8-3.8s-1.5-2.2-3.8-3.8z"/><path d="M5.8 8.2a4 4 0 1 1 0 7.6C3.5 14.2 2 12 2 12s1.5-2.2 3.8-3.8z"/></svg><div><span>AutoPlay</span><small>Similar music, selected to play next</small></div><em>' + auto.length + ' songs</em></div>';
         auto.forEach((u) => { html += rowHtml(u.t, u.idx, 'item'); });
       }
       if (!own.length && !auto.length) html += '<div class="un-empty">That is the last song in the queue. Turn on AutoPlay (the infinity button) to keep the music going.</div>';
@@ -15458,8 +15463,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     body.addEventListener('dragend', () => { dragFrom = -1; body.querySelectorAll('.un-row').forEach((x) => x.classList.remove('dragging', 'drop-before', 'drop-after')); });
 
+    // In the normal window the queue sits exactly where the lyrics / now playing card is, in the app's own colours,
+    // so it reads as part of the app and not as a window floating over it. In ambient mode it floats at the right.
+    function dock() {
+      const ambient = !!state.isTvKaraokeOpen;
+      panel.classList.toggle('in-ambient', ambient);
+      const props = ['left', 'top', 'width', 'height', 'right', 'bottom', 'background', 'borderRadius', 'border', 'boxShadow', 'backdropFilter'];
+      if (ambient) { props.forEach((p) => { panel.style[p] = ''; }); panel.classList.remove('docked'); return; }
+      const rp = document.getElementById('right-panel');
+      let r = rp && !rp.classList.contains('hidden') ? rp.getBoundingClientRect() : null;
+      if (r && r.width < 140) r = null;
+      if (!r) {
+        const mc = document.querySelector('.main-content');
+        const m = mc ? mc.getBoundingClientRect() : null;
+        if (!m) return;
+        r = { left: Math.max(m.left, m.right - 380), top: m.top, width: Math.min(380, m.width), height: m.height };
+      }
+      panel.classList.add('docked');
+      panel.style.left = r.left + 'px'; panel.style.top = r.top + 'px'; panel.style.width = r.width + 'px'; panel.style.height = r.height + 'px';
+      panel.style.right = 'auto'; panel.style.bottom = 'auto';
+      const cs = rp ? getComputedStyle(rp) : null;
+      panel.style.background = 'var(--md-sys-color-surface-container-low, #17181c)';
+      panel.style.borderRadius = cs ? cs.borderRadius : '28px';
+      panel.style.border = '0';
+      panel.style.boxShadow = 'none';
+      panel.style.backdropFilter = 'none';
+    }
+    let lastTopUp = 0;
+    function topUpIfShort() {
+      const upcoming = (state.queue || []).length - (state.queueIndex + 1);
+      if (upcoming < 8 && window.GaaneMix && GaaneMix.settings.autoplay && Date.now() - lastTopUp > 15000) {
+        lastTopUp = Date.now();
+        GaaneMix.extendQueue().then(() => render()).catch(() => {});
+      }
+    }
+    window.addEventListener('resize', () => { if (open) dock(); });
+
     function setOpen(v) {
       open = !!v;
+      if (open) { dock(); topUpIfShort(); }
       panel.classList.toggle('open', open);
       panel.setAttribute('aria-hidden', open ? 'false' : 'true');
       if (open) render();
@@ -15474,7 +15516,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('un-auto')?.addEventListener('click', () => { document.getElementById('btn-autoplay')?.click(); setTimeout(paintToggles, 30); });
     window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) { setOpen(false); e.stopPropagation(); } }, true);
     window.__renderUpNext = () => { if (open) render(); };
-    setInterval(() => { panel.classList.toggle('in-ambient', !!state.isTvKaraokeOpen); if (open) { paintToggles(); const b = body.querySelector('.un-bars'); if (b) b.classList.toggle('on', !!state.isPlaying); } }, 500);
+    setInterval(() => { if (open) dock(); if (open) { paintToggles(); const b = body.querySelector('.un-bars'); if (b) b.classList.toggle('on', !!state.isPlaying); } }, 500);
   })();
 
   // Ambient extras: Verse lyrics (kinetic, word by word) and the Live backdrop -------------------------------------

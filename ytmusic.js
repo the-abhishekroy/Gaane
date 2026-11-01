@@ -675,4 +675,31 @@ function startKeepAlive() {
   if (keepAliveTimer.unref) keepAliveTimer.unref();
 }
 
-module.exports = { rotateCookies, startKeepAlive, mergeSetCookies, _test: { seal, unseal, saveAuth, loadAuth, clearAuth, cookie: () => (authCache ? authCache.cookie : null), reset: () => { authCache = null; } }, searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
+// ---- lyrics from YouTube itself (used by lyrics-providers.js) ------------------------------------------------
+function* walkObjects(node) {
+  if (Array.isArray(node)) { for (const n of node) yield* walkObjects(n); }
+  else if (node && typeof node === 'object') { yield node; for (const v of Object.values(node)) yield* walkObjects(v); }
+}
+const joinRuns = (x) => (x && x.runs ? x.runs.map((r) => r.text).join('') : (x && x.simpleText) || '');
+
+// The Lyrics tab of the playing video: plain text, for songs the dedicated lyric databases do not have.
+async function youtubeMusicLyrics(videoId) {
+  if (!/^[\w-]{11}$/.test(String(videoId || ''))) return null;
+  const next = await ytmRequest('next', { videoId, isAudioOnly: true });
+  let browseId = null;
+  for (const o of walkObjects(next)) {
+    const id = o.browseEndpoint && o.browseEndpoint.browseId;
+    if (typeof id === 'string' && id.startsWith('MPLYt')) { browseId = id; break; }
+  }
+  if (!browseId) return null;
+  const page = await ytmRequest('browse', { browseId });
+  for (const o of walkObjects(page)) {
+    if (o.musicDescriptionShelfRenderer) {
+      const text = joinRuns(o.musicDescriptionShelfRenderer.description).trim();
+      if (text && !/^lyrics not available/i.test(text)) return text;
+    }
+  }
+  return null;
+}
+
+module.exports = { youtubeMusicLyrics, rotateCookies, startKeepAlive, mergeSetCookies, _test: { seal, unseal, saveAuth, loadAuth, clearAuth, cookie: () => (authCache ? authCache.cookie : null), reset: () => { authCache = null; } }, searchSuggestions, connectWithCookie, fetchHome, fetchTab, ROUTES, handleRoute, parseHomeSections, parsePanelTracks, collectListItems, waveTracks };
