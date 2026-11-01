@@ -123,3 +123,13 @@ test('parseAny reads whatever a provider sends and drops section headers and err
   assert.strictEqual(L.parseAny('Lyrics not found'), null);
   assert.strictEqual(L.parseAny('<?xml version="1.0"?><QrcInfos><Lyric_1 LyricContent="[1000,500]Hi(1000,250) there(1250,250)"/></QrcInfos>').kind, 'word');
 });
+
+test('QQ style header (Title - Artist, then credits) is dropped as a whole', () => {
+  const lines = [
+    { time: 0, text: 'Believer - Imagine Dragons/Lil Wayne', words: null },
+    { time: 810, text: 'Lyrics by：Dan Reynolds', words: null },
+    { time: 1620, text: 'Composed by：Dan Reynolds', words: null },
+    { time: 7950, text: 'First things first', words: null }
+  ];
+  assert.deepStrictEqual(L.stripCreditLines(lines).map((l) => l.text), ['First things first']);
+});

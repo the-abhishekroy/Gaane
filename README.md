@@ -11,6 +11,10 @@
 
 ---
 
+## What's new in 1.2.5
+
+- **Wrong lyrics fixed.** A search for "Artist Title" could land on another song by the same artist. Lyric matches now have to be the same song (by name and artist), the artist is taken out of titles like "Imagine Dragons - Believer (Official Music Video)" and out of channel names like "ImagineDragonsVEVO", credit lines that some sources stamp as lyrics ("Lyrics by: ...") are dropped, and lyrics saved by earlier versions are refreshed.
+
 ## What's new in 1.2.4
 
 - **Lyrics for far more songs.** Gaane now asks ten sources at once, in BitChord's order: lrc.red, BiniLyrics, BetterLyrics (Apple and QQ Music timings), LyricsPlus, Unison, KuGou, LRCLIB, YouTube Music's own Lyrics tab and lyrics.ovh. Titles in Hindi, Nepali and other scripts are no longer stripped bare before searching, and a song is tried under a shorter name if the full one finds nothing. A version of the lyrics that is longer than the song is rejected, and the best-ranked source wins.

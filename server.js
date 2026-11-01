@@ -2798,17 +2798,24 @@ function sanitizeForLyrics(title, artist) {
   const escRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // letters and digits of every script are kept (Devanagari, Arabic, Hangul...), only the packaging goes
   const tidy = (x) => x.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
-  const cleanTitle = tidy(String(title || '')
-    .replace(/[\u2018\u2019\u02bc']/g, '')
-    .replace(new RegExp('^\\s*' + escRe(String(artist || '').trim() || '\u0000') + '\\s*[-\u2013\u2014:]\\s*', 'i'), '')
-    .split(/\s[|\u2502]\s/)[0]
+  const loose = (x) => String(x || '').toLowerCase().replace(/vevo|official|records|music|topic/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+  // "ImagineDragonsVEVO" -> "Imagine Dragons"
+  const artistName = String(artist || '').replace(/\s-\sTopic$/i, '').replace(/VEVO$/i, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+  let t = String(title || '').replace(/[\u2018\u2019\u02bc']/g, '').split(/\s[|\u2502]\s/)[0];
+  // "Artist - Song" and "Song - Artist": the half that is the artist is dropped
+  const halves = t.split(/\s[-\u2013\u2014]\s/);
+  if (halves.length === 2 && loose(artistName)) {
+    const l = loose(halves[0]), r = loose(halves[1]), a = loose(artistName);
+    if (l && (a.includes(l) || l.includes(a))) t = halves[1];
+    else if (r && (a.includes(r) || r.includes(a))) t = halves[0];
+  }
+  const cleanTitle = tidy(t
     .replace(/\[.*?\]|\(.*?\)/g, '')
     .replace(/official\s*(music)?\s*video|official\s*audio|lyric(al)?\s*video|lyrics?|\bhd\b|\b4k\b|remastered|visuali[sz]er|clip\s*officiel|video\s*clip|full\s*song/gi, '')
     .replace(/\b(ft|feat)\b\.?.*$/i, ''));
-  const cleanArtist = tidy(String(artist || '')
+  const cleanArtist = tidy(artistName
     .replace(/\[.*?\]|\(.*?\)/g, '')
-    .replace(/\s-\sTopic$/i, '')
-    .replace(/vevo|records|official/gi, ''));
+    .replace(/records|official/gi, ''));
   return { cleanTitle, cleanArtist };
 }
 
@@ -2931,7 +2938,7 @@ function getCustomLyricsPath(title, artist) {
 }
 
 function getFetchedLyricsPath(title, artist) {
-  return path.join(LYRICS_DIR, lyricsKey(title, artist) + '.v2.lrc');
+  return path.join(LYRICS_DIR, lyricsKey(title, artist) + '.v3.lrc');
 }
 
 async function handleLyrics(req, res, title, artist, allowOnline = true, extra = {}) {

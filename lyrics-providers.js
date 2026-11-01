@@ -339,8 +339,23 @@ function untimeIfStamped(lines) {
   return lines;
 }
 
+// Some sources (QQ Music especially) open and close with credit lines stamped like lyrics:
+// "Lyrics by: ...", "Composed by: ...", "作词 : ...". They are not sung; drop them from both ends.
+const CREDIT_KEY = /^(?:lyrics?|lyricist|words?|written|writer|song ?writer|compos(?:ed|er)|music|produc(?:ed|er)|arrang(?:ed|er|ement)|mix(?:ed|ing)?|master(?:ed|ing)?|vocals?|guitars?|bass|drums|keyboards?|piano|strings|engineer(?:ed)?|recorded|publish(?:er|ed)|label|copyright|author|isrc|作词|作曲|编曲|制作人|词|曲|演唱|混音|母带|出品|发行|歌词)(?:\s+by)?\s*[：:]/i;
+function stripCreditLines(lines) {
+  const isCredit = (l) => !!l && !l.gap && typeof l.text === 'string' && CREDIT_KEY.test(l.text.trim());
+  let a = 0, b = lines.length;
+  // QQ opens with "Title - Artist" and then the credits
+  if (lines.length > 2 && lines[0].time < 1500 && /\s[-–]\s/.test(lines[0].text || '') && isCredit(lines[1])) a = 1;
+  while (a < b && (isCredit(lines[a]) || lines[a].gap)) a++;
+  while (b > a && (isCredit(lines[b - 1]) || lines[b - 1].gap)) b--;
+  // only strip when it really was a header block: at least one credit line at the edge
+  const headerHad = a > 0 && lines.slice(0, a).some(isCredit), footerHad = lines.slice(b).some(isCredit);
+  return lines.slice(headerHad ? a : 0, footerHad ? b : lines.length);
+}
+
 const answer = (input) => {
-  const lines = untimeIfStamped(input);
+  const lines = stripCreditLines(untimeIfStamped(input));
   const kind = kindOf(lines);
   return kind ? { kind, lines } : null;
 };
@@ -505,6 +520,22 @@ async function lyricsOvh(q) {
   return lines.length > 3 ? answer(lines) : null;
 }
 
+const normLoose = (x) => String(x || '').normalize('NFD').replace(/\p{Mn}+/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+// the same song, by name: one name contains the other, or most of the words agree
+function sameSong(candTitle, wantTitle) {
+  const c = normLoose(candTitle), w = normLoose(wantTitle);
+  if (!c || !w) return false;
+  if (c === w || c.includes(w) || w.includes(c)) return true;
+  const cw = new Set(c.split(' ').filter((t) => t.length > 1)), ww = w.split(' ').filter((t) => t.length > 1);
+  if (!ww.length) return false;
+  return ww.filter((t) => cw.has(t)).length / ww.length >= 0.7;
+}
+function sameArtist(candArtist, wantArtist) {
+  const c = normLoose(candArtist).replace(/ /g, ''), w = normLoose(wantArtist).replace(/ /g, '');
+  if (!w) return true;                       // no artist was asked for
+  return !!c && (c.includes(w) || w.includes(c));
+}
+
 async function lrclib(q) {
   const headers = { 'User-Agent': 'Gaane/1.2 (https://www.abhishekkroy.me)' };
   const get = json(await httpGet(urlWith('https://lrclib.net/api/get', {
@@ -516,8 +547,10 @@ async function lrclib(q) {
   const list = json(await httpGet(urlWith('https://lrclib.net/api/search', { q: `${q.artist} ${q.title}`.trim() }), { headers }));
   if (Array.isArray(list) && list.length) {
     const secs = q.durationMs / 1000;
-    const near = list.filter((x) => !secs || !x.duration || Math.abs(x.duration - secs) <= 6);
-    const pool = near.length ? near : list;
+    // only the same song: a search for "Artist Title" happily answers with another song by that artist
+    const same = list.filter((x) => sameSong(x.trackName || x.name, q.title) && sameArtist(x.artistName, q.artist));
+    const near = same.filter((x) => !secs || !x.duration || Math.abs(x.duration - secs) <= 6);
+    const pool = near.length ? near : same;
     const withSynced = pool.find((x) => x.syncedLyrics);
     const found = pick(withSynced || pool[0]);
     if (found) return found;
@@ -597,5 +630,5 @@ function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, 
 }
 
 module.exports = {
-  parseAny, parseKaraoke, _answer: answer, withGaps, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
+  stripCreditLines, parseAny, parseKaraoke, _answer: answer, withGaps, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
 };
