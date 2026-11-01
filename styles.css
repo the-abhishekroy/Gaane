@@ -8203,6 +8203,4 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 .ls-text b { font-weight: 600; font-size: 15px; }
 .ls-text small { opacity: .65; font-size: 12.5px; }
 
-.roman-aa { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; line-height: 1; }
-#btn-romanize-lyrics.active { background: rgba(255,255,255,.28); }
 .lyric-translation { font-size: 0.62em; opacity: .75; font-weight: 500; margin-top: 4px; }
