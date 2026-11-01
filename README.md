@@ -11,6 +11,13 @@
 
 ---
 
+## What's new in 1.2.2
+
+- **Sign in like a normal app.** Press Connect, sign in on Google's own page in a browser window (Chrome, Brave or Edge) that Gaane opens and closes for you. No cookie copying. The window is a private profile of its own, so the login is not changed behind Gaane's back and stays put.
+- **The next song starts at once.** Gaane now looks up the next three songs while one plays (it only did one, and only halfway through), so Next and the end of a song start the next song in about a tenth of a second instead of 3 seconds.
+- **Queue panel.** A Queue button in the bottom bar and in ambient mode opens a panel like BitChord's: Now playing, the songs coming up, an AutoPlay section, drag to reorder, a cross to remove, and shuffle, repeat and AutoPlay at the bottom.
+- **Breaks in the music.** Lyrics show "..." for intros, solos and other instrumental stretches instead of keeping the last line lit, and the credit shows which source the lyrics came from.
+
 ## What's new in 1.2.1
 
 - **Live wallpaper (macOS).** Settings, Live backdrop: draw the backdrop as your desktop wallpaper on every screen, behind your icons and windows, moving with the music. (macOS does not allow apps to draw on the lock screen.)

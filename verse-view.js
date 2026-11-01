@@ -173,6 +173,9 @@
       col = colours(mode, opts.palette());
       const word = idx >= 0 ? flat[idx] : null;
       const p = word ? clamp((t - word.s) / Math.max(0.12, Math.min(0.7, word.e - word.s)), 0, 1) : 0;
+      // an instrumental stretch: once the last word is done and a long pause follows, the hero word dims down
+      const nextWord = idx >= 0 ? flat[idx + 1] : flat[0];
+      const resting = !!word && t > word.e + 1.2 && (!nextWord || nextWord.s - t > 1.0);
       const ctx = { F, W, H, p, bass };
       const layout = LAYOUT[style];
       if (idx !== ai) { ai = idx; stage.dataset.pulse = String(Date.now()); }
@@ -202,7 +205,7 @@
           const sc = age < 0 ? 0.5 : 1 - Math.exp(-11 * age) * Math.cos(17 * age) * 0.55;
           v.s = clamp(sc, 0.45, 1.25) * (target.s || 1);
         } else v.s += ((target.s || 1) - v.s) * k;
-        v.o += (target.o - v.o) * k;
+        v.o += ((resting ? target.o * 0.22 : target.o) - v.o) * k;
         v.w += (target.w - v.w) * k;
         const size = F * v.s * (r === 0 ? lenFit : Math.min(1, lenFit * 1.3));
         const pulse = r === 0 ? 1 + 0.03 * bass : 1;

@@ -4,6 +4,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { DATA_DIR } = require('./platform');
 const logger = require('./logger');
+const signin = require('./ytm-signin');
 
 const AUTH_PATH = path.join(DATA_DIR, 'ytm-auth.json');
 const CLIENT_VERSION = '1.20250101.01.00';
@@ -517,7 +518,7 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist', '/api/ytm-suggest']);
+const ROUTES = new Set(['/api/ytm-status', '/api/ytm-import-cookie', '/api/ytm-logout', '/api/ytm-home', '/api/ytm-collection', '/api/ytm-radio', '/api/ytm-tab', '/api/ytm-artist', '/api/ytm-suggest', '/api/ytm-signin-start', '/api/ytm-signin-status', '/api/ytm-signin-cancel', '/api/ytm-browsers']);
 
 async function handleRoute(parsedUrl, req, res) {
   const p = parsedUrl.pathname;
@@ -551,6 +552,20 @@ async function handleRoute(parsedUrl, req, res) {
       }
       if (data.connected) noteAuthResult(true);
       return sendJson(res, 200, { success: true, connected: data.connected, sections: data.sections, chips: data.chips, wave: waveTracks(data.sections) });
+    }
+    if (p === '/api/ytm-browsers') {
+      const list = signin.findBrowsers();
+      return sendJson(res, 200, { success: true, browsers: list.map((b) => b.name) });
+    }
+    if (p === '/api/ytm-signin-start' && req.method === 'POST') {
+      const st = await signin.start(connectWithCookie);
+      return sendJson(res, 200, { success: true, ...st });
+    }
+    if (p === '/api/ytm-signin-status') {
+      return sendJson(res, 200, { success: true, ...signin.status(), connected: !!loadAuth() });
+    }
+    if (p === '/api/ytm-signin-cancel' && req.method === 'POST') {
+      return sendJson(res, 200, { success: true, ...signin.cancel() });
     }
     if (p === '/api/ytm-suggest') {
       const q = String(parsedUrl.query.q || '').trim().slice(0, 120);

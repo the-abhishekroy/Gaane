@@ -65,3 +65,24 @@ test('all-zero timestamps are treated as plain text, so a real synced source win
   const r = await L.fetchLyrics({ title: 't', artist: 'a' }, { grace: 30, providers: [{ name: 'zero', run: async () => L._answer(lines) }, { name: 'good', run: async () => L._answer(L.parseLrc('[00:01.00]a\n[00:03.00]b')) }] });
   assert.strictEqual(r.source, 'good');
 });
+
+test('a stamped blank line is kept as an instrumental break, not dropped', () => {
+  const lines = L.parseLrc('[00:05.00]first\n[00:10.00]\n[00:20.00]second');
+  assert.strictEqual(lines.length, 3);
+  assert.strictEqual(lines[1].gap, true);
+  assert.strictEqual(L.kindOf(lines), 'line');
+});
+
+test('breaks of 4 s or more after a word-timed line become blank stamped lines', () => {
+  const lines = [
+    { time: 6000, text: 'a b', words: [{ s: 6000, e: 6500, t: 'a' }, { s: 6500, e: 7000, t: 'b' }] },
+    { time: 20000, text: 'c', words: [{ s: 20000, e: 20500, t: 'c' }] },
+    { time: 21000, text: 'd', words: [{ s: 21000, e: 21500, t: 'd' }] }
+  ];
+  const out = L.withGaps(lines);
+  assert.deepStrictEqual(out.map((l) => !!l.gap), [true, false, true, false, false]);   // intro break, line, break, line, line
+  assert.strictEqual(out[2].time, 7000);
+  const lrc = L.toLrc(lines);
+  assert.match(lrc, /^\[00:00\.00\]\n\[00:06\.00\]/);
+  assert.match(lrc, /\n\[00:07\.00\]\n\[00:20\.00\]/);
+});

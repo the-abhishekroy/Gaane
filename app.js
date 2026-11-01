@@ -3251,6 +3251,8 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
           if (text) {
             parsed.push(words ? { time: min * 60 + sec, text: text, words: words } : { time: min * 60 + sec, text: text });
+          } else {
+            parsed.push({ time: min * 60 + sec, text: '', gap: true });     // a stamped blank line is an instrumental break
           }
         } else if (line.trim()) {
           parsed.push({ time: -1, text: line.trim() });
@@ -3268,9 +3270,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      state.syncedLyrics = parsed;
+      state.syncedLyrics = insertLyricGaps(parsed);
       const hasSyncTimes = parsed.some(p => p.time >= 0);
-      if (el.lyricsStatus) el.lyricsStatus.textContent = data.isCustom ? (hasSyncTimes ? 'Custom synced' : 'Custom') : (hasSyncTimes ? 'Synced' : 'Plain');
+      if (el.lyricsStatus) {
+        const kind = state.lyricsSource && state.lyricsSource.kind;
+        const src = state.lyricsSource && state.lyricsSource.source;
+        el.lyricsStatus.textContent = data.isCustom ? (hasSyncTimes ? 'Custom synced' : 'Custom')
+          : (hasSyncTimes ? ((kind === 'word' ? 'Word-synced' : 'Synced') + (src ? ' · ' + src : '')) : 'Plain');
+      }
       if (state.trEnabled && state.trAuto) {
         state.trActive = true;
         fetchAndApplyTranslation();
@@ -3308,6 +3315,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   function getLyricsWordStyle() { return localStorage.getItem('riff_lyrics_word_style') === 'words' ? 'words' : 'gradient'; }
   function isGradientMode() { return state.lyricsMode === 'word' && getAdv('karaoke_words', true) && getLyricsWordStyle() === 'gradient'; }
 
+  // Breaks in the singing. Word-timed lines say when they stop; for lines timed only by their start, how long the
+  // line is sung is estimated from its length. A break of 4 s or more (5.5 s when estimated) becomes a "..." line,
+  // so the last lyric is not kept lit through a solo or an intro.
+  function insertLyricGaps(lines) {
+    const real = lines.filter((l) => l.time >= 0 && !l.gap);
+    if (!real.length) return lines;
+    const out = [];
+    const first = lines.find((l) => l.time >= 0);
+    if (first && !first.gap && first.time >= 4) out.push({ time: 0, text: '', gap: true });
+    lines.forEach((l, i) => {
+      out.push(l);
+      if (l.gap || l.time < 0) return;
+      const next = lines.slice(i + 1).find((x) => x.time >= 0);
+      if (!next || next.gap) return;
+      const known = l.words && l.words.length;
+      const end = known ? l.words[l.words.length - 1].e : l.time + Math.min(9, Math.max(1.5, 0.5 + String(l.text).length * 0.09));
+      if (next.time - end >= (known ? 4 : 5.5) && end > l.time) out.push({ time: end + (known ? 0.1 : 0), text: '', gap: true });
+    });
+    return out;
+  }
+
   function renderLyricsView() {
     if (!el.lyricsContainer) return;
     if (state.syncedLyrics.length === 0) return;
@@ -3318,6 +3346,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       div.className = 'lyric-line';
       div.id = `lyric-line-${index}`;
       if (isRtlText(line.text)) div.classList.add('rtl');
+
+      if (line.gap) {
+        div.classList.add('lyric-gap');
+        div.innerHTML = '<span class="gap-dots"><i></i><i></i><i></i></span>';
+        el.lyricsContainer.appendChild(div);
+        return;
+      }
 
       if (isGradientMode()) {
         const fill = document.createElement('span');
@@ -3922,6 +3957,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     document.querySelectorAll('.lyric-line').forEach((lineEl, idx) => {
+      if (lineEl.classList.contains('lyric-gap')) {
+        if (idx === activeIndex) {
+          const gs = getLineStartTime(idx), ge = getLineEndTime(idx);
+          lineEl.style.setProperty('--gp', Math.min(1, Math.max(0, (matchTime - gs) / Math.max(0.5, ge - gs))).toFixed(3));
+          lineEl.classList.add('active');
+        } else lineEl.classList.remove('active');
+        if (lineChanged) lineEl.style.setProperty('--dist', activeIndex >= 0 ? Math.abs(idx - activeIndex) : 0);
+        return;
+      }
       if (lineChanged) lineEl.style.setProperty('--dist', activeIndex >= 0 ? Math.abs(idx - activeIndex) : 0);
       if (idx === activeIndex) {
         if (!lineEl.classList.contains('active')) lineEl.classList.add('active');
@@ -5423,6 +5467,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     el.nativeAudio.addEventListener('playing', () => {
+      schedulePrefetchUpcoming();
       state.isPlaying = true;
       document.body.classList.add('is-playing');
       updatePlayPauseButton(true, false);
@@ -6319,6 +6364,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       requestAnimationFrame(() => {
         if (el.searchTracksList) renderTracks(el.searchTracksList, data.tracks, 'search');
+        // the top result is the one most likely to be tapped: have it ready
+        setTimeout(() => { if (state.searchToken === searchToken) prefetchTrack(data.tracks[0]); }, 700);
       });
 
       const showArtists = localStorage.getItem('riff_search_artists') !== '0';
@@ -7092,6 +7139,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   function updateQueueBadge() {
     if (el.queueCount) el.queueCount.textContent = state.queue.length;
     scheduleQueueSave();
+    schedulePrefetchUpcoming();
+    if (window.__renderUpNext) window.__renderUpNext();
+  }
+
+  // Look-ahead: the server needs a few seconds to find the audio of a song it has not seen. Doing that for the next
+  // few songs while the current one plays means Next, and the end of a song, start the next one at once.
+  const prefetched = new Map();       // track key -> time asked
+  let prefetchTimer = null, prefetchRunning = false;
+  function streamInfoUrlFor(t) {
+    return `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(t.url || '')}&id=${encodeURIComponent(t.id || '')}&platform=${t.platform || state.platform}&title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&duration=${encodeURIComponent(t.duration || 0)}&thumbnail=${encodeURIComponent(t.thumbnail || '')}`;
+  }
+  async function prefetchTrack(t) {
+    if (!t || t.platform === 'local' || (!t.id && !t.url)) return;
+    const key = String(t.id || t.url);
+    const at = prefetched.get(key);
+    if (at && Date.now() - at < 20 * 60 * 1000) return;
+    prefetched.set(key, Date.now());
+    if (prefetched.size > 200) prefetched.delete(prefetched.keys().next().value);
+    try { await fetch(streamInfoUrlFor(t)); } catch (e) { prefetched.delete(key); }
+    if (getAdv('online_lyrics', true)) {
+      fetch(`http://127.0.0.1:${state.serverPort}/api/lyrics?title=${encodeURIComponent(t.title || '')}&artist=${encodeURIComponent(t.artist || '')}&online=1&duration=${encodeURIComponent(t.duration || 0)}&album=${encodeURIComponent(t.album || '')}`).catch(() => {});
+    }
+  }
+  function schedulePrefetchUpcoming() {
+    clearTimeout(prefetchTimer);
+    prefetchTimer = setTimeout(async () => {
+      if (prefetchRunning || !state.queue || !state.queue.length) return;
+      prefetchRunning = true;
+      try {
+        const from = Math.max(0, state.queueIndex + 1);
+        const next = state.queue.slice(from, from + 3);
+        for (const t of next) { await prefetchTrack(t); await new Promise((r) => setTimeout(r, 400)); }
+      } finally { prefetchRunning = false; }
+    }, 1500);
   }
 
   function renderQueueView() {
@@ -15255,6 +15336,147 @@ document.addEventListener('DOMContentLoaded', async () => {
     paint();
   })();
 
+  // Queue panel (Up next), laid out like BitChord's: Now playing, the songs coming up, an AutoPlay section for the
+  // similar songs added for you, drag to reorder, remove with the cross, and shuffle / repeat / AutoPlay at the bottom.
+  (() => {
+    const panel = document.getElementById('upnext');
+    const body = document.getElementById('upnext-body');
+    if (!panel || !body) return;
+    let open = false, dragFrom = -1;
+    const tierOf = (t) => (window.GaaneQueue ? GaaneQueue.tierOf(t) : 'context');
+    const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const thumb = (t) => { try { return (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(t) : t.thumbnail) || ''; } catch (e) { return t.thumbnail || ''; } };
+
+    function rowHtml(t, idx, kind) {
+      const img = thumb(t);
+      const handle = kind === 'now' ? '' : '<span class="un-handle" title="Drag to reorder"><i></i><i></i></span>';
+      const bars = kind === 'now' ? `<span class="un-bars ${state.isPlaying ? 'on' : ''}"><i></i><i></i><i></i><i></i></span>` : '';
+      return `<div class="un-row ${kind}" data-idx="${idx}" ${kind === 'now' ? '' : 'draggable="true"'}>
+        ${handle}
+        <span class="un-art" style="${img ? `background-image:url('${esc(img).replace(/'/g, '%27')}')` : ''}"></span>
+        <span class="un-text"><b>${esc(t.title)}</b><small>${esc(t.artist)}</small></span>
+        ${bars}<button type="button" class="un-x" data-remove="${idx}" aria-label="Remove">&times;</button>
+      </div>`;
+    }
+
+    function render() {
+      const q = state.queue || [];
+      const cur = q[state.queueIndex] || state.currentTrack;
+      let html = '';
+      if (!cur) { body.innerHTML = '<div class="un-empty">Nothing is playing. Play a song and what comes next shows up here.</div>'; paintToggles(); return; }
+      const src = cur._source ? String(cur._source).replace(/^oneoff:/, '') : '';
+      html += '<div class="un-section"><span>Now playing</span>' + (src && src !== 'search' && src !== 'oneoff' ? `<em>Playing from ${esc(src)}</em>` : '') + '</div>';
+      html += rowHtml(cur, state.queueIndex, 'now');
+      const start = Math.max(0, state.queueIndex + 1);
+      const upcoming = q.slice(start).map((t, i) => ({ t, idx: start + i }));
+      const firstAuto = upcoming.findIndex((u) => tierOf(u.t) === 'autoplay');
+      const own = firstAuto < 0 ? upcoming : upcoming.slice(0, firstAuto);
+      const auto = firstAuto < 0 ? [] : upcoming.slice(firstAuto);
+      if (own.length) {
+        html += '<div class="un-section"><span>Next in queue</span></div>';
+        own.forEach((u) => { html += rowHtml(u.t, u.idx, 'item'); });
+      }
+      if (auto.length) {
+        html += '<div class="un-section un-auto"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18.2 8.2a4 4 0 1 0 0 7.6c2.3-1.6 3.8-3.8 3.8-3.8s-1.5-2.2-3.8-3.8z"/><path d="M5.8 8.2a4 4 0 1 1 0 7.6C3.5 14.2 2 12 2 12s1.5-2.2 3.8-3.8z"/></svg><div><span>AutoPlay</span><small>Similar music, selected to play next</small></div></div>';
+        auto.forEach((u) => { html += rowHtml(u.t, u.idx, 'item'); });
+      }
+      if (!own.length && !auto.length) html += '<div class="un-empty">That is the last song in the queue. Turn on AutoPlay (the infinity button) to keep the music going.</div>';
+      const keep = body.scrollTop;
+      body.innerHTML = html;
+      body.scrollTop = keep;
+      paintToggles();
+    }
+
+    function paintToggles() {
+      const sh = document.getElementById('un-shuffle'), rp = document.getElementById('un-repeat'), au = document.getElementById('un-auto');
+      if (sh) sh.classList.toggle('on', !!state.isShuffle);
+      if (rp) { rp.classList.toggle('on', state.repeatMode !== 'off'); rp.classList.toggle('one', state.repeatMode === 'one'); rp.title = 'Repeat: ' + (state.repeatMode === 'off' ? 'off' : state.repeatMode === 'all' ? 'all' : 'this song'); }
+      if (au) au.classList.toggle('on', !!(window.GaaneMix && GaaneMix.settings.autoplay));
+      document.getElementById('btn-upnext')?.classList.toggle('active', open);
+      document.getElementById('btn-tvk-queue')?.classList.toggle('active', open);
+    }
+
+    function removeAt(i) {
+      const q = state.queue;
+      if (i < 0 || i >= q.length) return;
+      const wasCurrent = i === state.queueIndex;
+      q.splice(i, 1);
+      if (i < state.queueIndex) state.queueIndex--;
+      updateQueueBadge();
+      if (wasCurrent) {
+        if (q.length) { state.queueIndex = Math.min(i, q.length) - 1; playNext(); }
+        else { try { el.nativeAudio.pause(); } catch (e) {} }
+      }
+      render();
+    }
+    function moveItem(from, to) {
+      const q = state.queue;
+      if (from === to || from < 0 || from >= q.length) return;
+      const [m] = q.splice(from, 1);
+      if (from < to) to--;
+      q.splice(Math.max(0, Math.min(q.length, to)), 0, m);
+      if (from < state.queueIndex && to >= state.queueIndex) state.queueIndex--;
+      else if (from > state.queueIndex && to <= state.queueIndex) state.queueIndex++;
+      updateQueueBadge();
+      render();
+    }
+
+    body.addEventListener('click', (e) => {
+      const x = e.target.closest('.un-x');
+      if (x) { removeAt(parseInt(x.dataset.remove, 10)); return; }
+      const r = e.target.closest('.un-row');
+      if (!r || e.target.closest('.un-handle')) return;
+      const i = parseInt(r.dataset.idx, 10);
+      if (r.classList.contains('now')) return;
+      const t = state.queue[i];
+      if (t) playTrack(t, state.queue, i, 'queue');
+    });
+    body.addEventListener('dragstart', (e) => {
+      const r = e.target.closest('.un-row');
+      if (!r || r.classList.contains('now')) return;
+      dragFrom = parseInt(r.dataset.idx, 10);
+      r.classList.add('dragging');
+      try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(dragFrom)); } catch (err) {}
+    });
+    body.addEventListener('dragover', (e) => {
+      const r = e.target.closest('.un-row');
+      if (!r || dragFrom < 0 || r.classList.contains('now')) return;
+      e.preventDefault();
+      const b = r.getBoundingClientRect();
+      body.querySelectorAll('.un-row').forEach((x) => x.classList.remove('drop-before', 'drop-after'));
+      r.classList.add(e.clientY < b.top + b.height / 2 ? 'drop-before' : 'drop-after');
+    });
+    body.addEventListener('drop', (e) => {
+      const r = e.target.closest('.un-row');
+      if (!r || dragFrom < 0) return;
+      e.preventDefault();
+      const b = r.getBoundingClientRect();
+      let to = parseInt(r.dataset.idx, 10) + (e.clientY < b.top + b.height / 2 ? 0 : 1);
+      const from = dragFrom; dragFrom = -1;
+      if (to <= state.queueIndex) to = state.queueIndex + 1;      // nothing goes ahead of the song playing
+      moveItem(from, to);
+    });
+    body.addEventListener('dragend', () => { dragFrom = -1; body.querySelectorAll('.un-row').forEach((x) => x.classList.remove('dragging', 'drop-before', 'drop-after')); });
+
+    function setOpen(v) {
+      open = !!v;
+      panel.classList.toggle('open', open);
+      panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) render();
+      paintToggles();
+    }
+    document.getElementById('btn-upnext')?.addEventListener('click', () => setOpen(!open));
+    document.getElementById('btn-tvk-queue')?.addEventListener('click', () => setOpen(!open));
+    document.getElementById('upnext-close')?.addEventListener('click', () => setOpen(false));
+    document.getElementById('upnext-clear')?.addEventListener('click', () => { el.btnClearQueue && el.btnClearQueue.click(); render(); });
+    document.getElementById('un-shuffle')?.addEventListener('click', () => { el.btnShuffle && el.btnShuffle.click(); setTimeout(paintToggles, 30); });
+    document.getElementById('un-repeat')?.addEventListener('click', () => { el.btnRepeat && el.btnRepeat.click(); setTimeout(paintToggles, 30); });
+    document.getElementById('un-auto')?.addEventListener('click', () => { document.getElementById('btn-autoplay')?.click(); setTimeout(paintToggles, 30); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) { setOpen(false); e.stopPropagation(); } }, true);
+    window.__renderUpNext = () => { if (open) render(); };
+    setInterval(() => { panel.classList.toggle('in-ambient', !!state.isTvKaraokeOpen); if (open) { paintToggles(); const b = body.querySelector('.un-bars'); if (b) b.classList.toggle('on', !!state.isPlaying); } }, 500);
+  })();
+
   // Ambient extras: Verse lyrics (kinetic, word by word) and the Live backdrop -------------------------------------
   const ambientExtras = (() => {
     const read = () => { try { return JSON.parse(localStorage.getItem('gaane_ambient') || '{}'); } catch (e) { return {}; } };
@@ -15750,7 +15972,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     overlay.innerHTML = `
       <div class="ytm-dialog" role="dialog" aria-label="Connect YouTube Music">
         <h3>Connect YouTube Music</h3>
-        <p class="ytm-dialog-note">Google doesn't allow sign-in inside apps like this, so use your normal browser once:</p>
+        <div id="ytm-signin-main">
+          <p class="ytm-dialog-note">Sign in the normal way. A browser window opens on Google's own sign-in page. When you finish, Gaane closes it by itself and you stay connected, so you only do this once.</p>
+          <button class="btn-pill-primary" id="ytm-browser-signin" disabled><span>Looking for a browser...</span></button>
+          <div class="ytm-dialog-status" id="ytm-signin-status"></div>
+        </div>
+        <details class="ytm-alt" id="ytm-alt"><summary>Use a cookie instead</summary>
+        <p class="ytm-dialog-note">Use this only if you have no Chrome, Brave or Edge:</p>
         <ol class="ytm-dialog-steps">
           <li>Open a <b>private window</b> in your browser (Chrome: <b>⇧⌘N</b>, Safari: <b>⇧⌘N</b>) and go to <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a>. Sign in there.</li>
           <li>Press <b>⌥⌘I</b> to open Developer Tools, go to the <b>Network</b> tab, then press <b>⌘R</b> to reload.</li>
@@ -15759,6 +15987,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <li>After you press Connect, <b>close the private window without signing out</b>. This matters: a browser keeps changing its session, so a copy taken from a normal tab stops working after a day or two. A private window you close leaves Gaane's copy as the only one, and Gaane keeps it fresh itself.</li>
         </ol>
         <textarea id="ytm-cookie-input" placeholder="Paste the cookie value here" spellcheck="false"></textarea>
+        </details>
         <div class="ytm-dialog-error" id="ytm-dialog-error"></div>
         <div class="ytm-dialog-actions">
           <button class="btn-outline-pill" id="ytm-dialog-cancel">Cancel</button>
@@ -15770,9 +15999,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     const input = overlay.querySelector('#ytm-cookie-input');
     const errEl = overlay.querySelector('#ytm-dialog-error');
     const connectBtn = overlay.querySelector('#ytm-dialog-connect');
-    const close = () => overlay.remove();
-    overlay.querySelector('#ytm-dialog-cancel').addEventListener('click', close);
-    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    const close = () => { if (signinTimer) clearInterval(signinTimer); overlay.remove(); };
+    let signinTimer = null;
+    const signinBtn = overlay.querySelector('#ytm-browser-signin');
+    const signinStatus = overlay.querySelector('#ytm-signin-status');
+    const alt = overlay.querySelector('#ytm-alt');
+    connectBtn.style.display = 'none';
+    alt.addEventListener('toggle', () => { connectBtn.style.display = alt.open ? '' : 'none'; });
+    const finishConnected = async () => {
+      close();
+      showToast('YouTube Music connected');
+      await refreshYtmStatus();
+      forYouTab = 'home';
+      Object.keys(forYouTabData).forEach(k => delete forYouTabData[k]);
+      ytmState.sections = [];
+      switchView('discover');
+      applyHomeMode();
+      renderForYouView(true);
+    };
+    (async () => {
+      let names = [];
+      try { names = (await (await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-browsers`)).json()).browsers || []; } catch (e) {}
+      if (!names.length) {
+        signinBtn.querySelector('span').textContent = 'No browser found';
+        signinStatus.textContent = 'Install Chrome, Brave or Edge, or use the cookie option below.';
+        alt.open = true;
+        return;
+      }
+      signinBtn.disabled = false;
+      signinBtn.querySelector('span').textContent = `Sign in with ${names[0].replace(/ Browser$/, '')}`;
+    })();
+    signinBtn.addEventListener('click', async () => {
+      signinBtn.disabled = true;
+      signinStatus.textContent = 'Opening the browser...';
+      try {
+        await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-signin-start`, { method: 'POST' });
+      } catch (e) { signinStatus.textContent = 'Could not start. Try again.'; signinBtn.disabled = false; return; }
+      signinTimer = setInterval(async () => {
+        try {
+          const st = await (await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-signin-status`)).json();
+          signinStatus.textContent = st.message || '';
+          if (st.state === 'done') { clearInterval(signinTimer); signinTimer = null; finishConnected(); }
+          else if (st.state === 'error' || st.state === 'cancelled' || st.state === 'nobrowser') { clearInterval(signinTimer); signinTimer = null; signinBtn.disabled = false; }
+        } catch (e) { /* keep waiting */ }
+      }, 1200);
+    });
+    overlay.querySelector('#ytm-dialog-cancel').addEventListener('click', () => { fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-signin-cancel`, { method: 'POST' }).catch(() => {}); close(); });
     connectBtn.addEventListener('click', async () => {
       const cookie = input.value.trim();
       if (!cookie) { errEl.textContent = 'Paste the cookie value first.'; return; }

@@ -193,7 +193,7 @@ function parseLrc(text) {
       if (w.length) { words = w; cleaned = w.map((x) => x.t).join(' '); }
     }
     ENH_TAG.lastIndex = 0;
-    if (!cleaned) continue;
+    if (!cleaned) { for (const t of stamps) lines.push({ time: t, end: null, text: '', words: null, gap: true }); continue; }   // a blank stamped line marks an instrumental stretch
     for (const t of stamps) lines.push({ time: t, end: null, text: cleaned, words });
   }
   const timed = lines.some((l) => l.time >= 0);
@@ -210,14 +210,38 @@ function fmt(ms) {
 
 function kindOf(lines) {
   if (!lines || !lines.some((l) => l.text && l.text.trim())) return null;
+  lines = lines.filter((l) => !l.gap);
   if (lines.some((l) => l.words && l.words.length > 1)) return 'word';
   if (lines.some((l) => l.time >= 0)) return 'line';
   return 'plain';
 }
 
+// Breaks in the singing (BitChord's LyricGaps): where a line's own end is known and the next line starts 4 s or more
+// later, a blank stamped line marks the break, so the screen shows "..." instead of keeping the last line lit.
+const MIN_GAP_MS = 4000;
+function withGaps(lines) {
+  const out = [];
+  const real = lines.filter((l) => !l.gap && l.time >= 0);
+  if (!real.length) return lines;
+  const firstTimed = lines.find((l) => l.time >= 0);
+  if (firstTimed && !firstTimed.gap && firstTimed.time >= MIN_GAP_MS) out.push({ time: 0, end: null, text: '', words: null, gap: true });
+  lines.forEach((l, i) => {
+    out.push(l);
+    if (l.gap || l.time < 0) return;
+    const next = lines.slice(i + 1).find((x) => x.time >= 0);
+    if (!next || next.gap) return;
+    const known = (l.words && l.words.length) ? l.words[l.words.length - 1].e : (l.end != null ? l.end : null);
+    if (known == null) return;
+    if (next.time - known >= MIN_GAP_MS && known > l.time) out.push({ time: known, end: null, text: '', words: null, gap: true });
+  });
+  return out;
+}
+
 /** Serialise lines as enhanced LRC. */
-function toLrc(lines) {
+function toLrc(input) {
+  const lines = withGaps(input);
   return lines.map((l) => {
+    if (l.gap) return `[${fmt(l.time)}]`;
     if (l.time < 0) return l.text;
     if (l.words && l.words.length) {
       const body = l.words.map((w) => `<${fmt(w.s)}>${w.t}`).join(' ');
@@ -419,5 +443,5 @@ function fetchLyrics(query, { providers = PROVIDERS, timeout = RACE_TIMEOUT_MS, 
 }
 
 module.exports = {
-  _answer: answer, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
+  _answer: answer, withGaps, fetchLyrics, parseTtml, parseLrc, toLrc, parseClock, parseLyricsPlus, bestLrcRedHit, lrcRedDocument, kindOf, PROVIDERS,
 };
