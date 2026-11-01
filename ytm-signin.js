@@ -36,7 +36,41 @@ function browserCandidates(platform = process.platform, env = process.env) {
   return out;
 }
 
+const BUNDLE_TO_NAME = {
+  'com.google.chrome': 'Google Chrome', 'com.brave.browser': 'Brave Browser', 'com.microsoft.edgemac': 'Microsoft Edge',
+  'org.chromium.chromium': 'Chromium', 'company.thebrowser.browser': 'Arc', 'com.vivaldi.vivaldi': 'Vivaldi', 'com.operasoftware.opera': 'Opera'
+};
+// The browser the Mac opens links with, when it is one of the Chromium family (those are the ones Gaane can watch
+// for the end of the sign-in; Safari has no such interface).
+function defaultBrowserName(platform = process.platform, env = process.env) {
+  if (platform !== 'darwin') return '';
+  try {
+    const plist = path.join(env.HOME || os.homedir(), 'Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist');
+    const json = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist], { encoding: 'utf8', timeout: 4000 }));
+    for (const h of json.LSHandlers || []) {
+      if (h.LSHandlerURLScheme === 'https' || h.LSHandlerURLScheme === 'http') {
+        const id = String(h.LSHandlerRoleAll || h.LSHandlerRoleViewer || '').toLowerCase();
+        if (BUNDLE_TO_NAME[id]) return BUNDLE_TO_NAME[id];
+        if (id) return `other:${id}`;
+      }
+    }
+  } catch (e) { /* unknown */ }
+  return '';
+}
+
+function orderBrowsers(list, def) {
+  if (!def) return list;
+  const i = list.findIndex((b) => b.name === def);
+  if (i <= 0) return list;
+  return [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+}
+
 function findBrowsers(exists = fs.existsSync, platform = process.platform, env = process.env) {
+  const list = findBrowsersRaw(exists, platform, env);
+  return orderBrowsers(list, defaultBrowserName(platform, env));
+}
+
+function findBrowsersRaw(exists = fs.existsSync, platform = process.platform, env = process.env) {
   const found = [];
   for (const c of browserCandidates(platform, env)) {
     try {
@@ -114,7 +148,7 @@ async function start(connect, opts = {}) {
     current = { state: 'nobrowser', message: 'No Chrome, Brave, Edge or Chromium found. Use the cookie option instead.' };
     return status();
   }
-  const b = browsers[0];
+  const b = (opts.browser && browsers.find((x) => x.name === opts.browser)) || browsers[0];
   const port = 49152 + Math.floor(Math.random() * 12000);
   const dir = path.join(os.tmpdir(), 'gaane-signin-' + crypto.randomBytes(5).toString('hex'));
   fs.mkdirSync(dir, { recursive: true });
@@ -152,4 +186,4 @@ async function start(connect, opts = {}) {
   return status();
 }
 
-module.exports = { start, status, cancel, findBrowsers, browserCandidates, hasSession, cookieHeader, LOGIN_URL };
+module.exports = { start, status, cancel, findBrowsers, orderBrowsers, defaultBrowserName, browserCandidates, hasSession, cookieHeader, LOGIN_URL };

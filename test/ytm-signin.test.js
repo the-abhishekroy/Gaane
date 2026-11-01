@@ -24,3 +24,10 @@ test('the cookie header holds what a browser sends to music.youtube.com', () => 
   ]);
   assert.strictEqual(h, 'SAPISID=abc; YTM=yes');
 });
+
+test('the default browser is tried first when it is one Gaane can use', () => {
+  const list = [{ name: 'Google Chrome' }, { name: 'Brave Browser' }, { name: 'Arc' }];
+  assert.deepStrictEqual(s.orderBrowsers(list, 'Arc').map((b) => b.name), ['Arc', 'Google Chrome', 'Brave Browser']);
+  assert.deepStrictEqual(s.orderBrowsers(list, '').map((b) => b.name), ['Google Chrome', 'Brave Browser', 'Arc']);
+  assert.deepStrictEqual(s.orderBrowsers(list, 'Safari').map((b) => b.name), ['Google Chrome', 'Brave Browser', 'Arc']);
+});

@@ -555,10 +555,11 @@ async function handleRoute(parsedUrl, req, res) {
     }
     if (p === '/api/ytm-browsers') {
       const list = signin.findBrowsers();
-      return sendJson(res, 200, { success: true, browsers: list.map((b) => b.name) });
+      const def = signin.defaultBrowserName();
+      return sendJson(res, 200, { success: true, browsers: list.map((b) => b.name), defaultBrowser: def && !def.startsWith('other:') ? def : '', defaultIsOther: !!def && def.startsWith('other:') });
     }
     if (p === '/api/ytm-signin-start' && req.method === 'POST') {
-      const st = await signin.start(connectWithCookie);
+      const st = await signin.start(connectWithCookie, { browser: String(parsedUrl.query.browser || '') });
       return sendJson(res, 200, { success: true, ...st });
     }
     if (p === '/api/ytm-signin-status') {

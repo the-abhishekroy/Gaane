@@ -8145,3 +8145,7 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 .upnext-toggles button.one .un-one { display: block; }
 #btn-tvk-queue { right: 184px; }
 #btn-tvk-queue.active, #btn-upnext.active { background: rgba(255,255,255,.28); }
+
+.ytm-signin-more { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ytm-signin-alt { border: 1px solid rgba(255,255,255,.16); background: transparent; color: inherit; border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.ytm-signin-alt:hover { background: rgba(255,255,255,.08); }

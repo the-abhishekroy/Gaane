@@ -16017,23 +16017,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       applyHomeMode();
       renderForYouView(true);
     };
+    let chosen = '';
     (async () => {
-      let names = [];
-      try { names = (await (await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-browsers`)).json()).browsers || []; } catch (e) {}
+      let info = { browsers: [] };
+      try { info = await (await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-browsers`)).json(); } catch (e) {}
+      const names = info.browsers || [];
       if (!names.length) {
-        signinBtn.querySelector('span').textContent = 'No browser found';
-        signinStatus.textContent = 'Install Chrome, Brave or Edge, or use the cookie option below.';
+        signinBtn.querySelector('span').textContent = 'No supported browser found';
+        signinStatus.textContent = 'Gaane needs Chrome, Brave, Edge, Arc or another Chromium browser for the one-time sign-in (Safari cannot be used for it). Install one, or use the cookie option below.';
         alt.open = true;
         return;
       }
+      const label = (n) => n.replace(/ Browser$/, '').replace(/^Google /, '');
+      chosen = names[0];
       signinBtn.disabled = false;
-      signinBtn.querySelector('span').textContent = `Sign in with ${names[0].replace(/ Browser$/, '')}`;
+      signinBtn.querySelector('span').textContent = `Sign in with ${label(names[0])}`;
+      if (!info.defaultBrowser) signinStatus.textContent = 'Safari (or whatever your default browser is) cannot be used for this step, so Gaane uses ' + label(names[0]) + '. It only opens for the sign-in and closes by itself.';
+      if (names.length > 1) {
+        const more = document.createElement('div');
+        more.className = 'ytm-signin-more';
+        names.slice(1).forEach((n) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ytm-signin-alt'; b.textContent = `Use ${label(n)}`;
+          b.addEventListener('click', () => { chosen = n; signinBtn.click(); });
+          more.appendChild(b);
+        });
+        signinStatus.parentElement.insertBefore(more, signinStatus);
+      }
     })();
     signinBtn.addEventListener('click', async () => {
       signinBtn.disabled = true;
       signinStatus.textContent = 'Opening the browser...';
       try {
-        await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-signin-start`, { method: 'POST' });
+        await fetch(`http://127.0.0.1:${state.serverPort}/api/ytm-signin-start?browser=${encodeURIComponent(chosen)}`, { method: 'POST' });
       } catch (e) { signinStatus.textContent = 'Could not start. Try again.'; signinBtn.disabled = false; return; }
       signinTimer = setInterval(async () => {
         try {
