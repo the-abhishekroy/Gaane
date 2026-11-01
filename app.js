@@ -3433,6 +3433,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const TRANSLATION_LANGUAGES = [
+    { code: 'hinglish', name: 'Hinglish (Roman letters)', flag: '🇮🇳' },
     { code: 'af', name: 'Afrikaans', flag: '🇿🇦' },
     { code: 'sq', name: 'Albanian', flag: '🇦🇱' },
     { code: 'am', name: 'Amharic', flag: '🇪🇹' },
@@ -3573,7 +3574,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!state.currentTrack || !state.syncedLyrics || state.syncedLyrics.length === 0) return;
     const track = state.currentTrack;
     const lang = state.trLang || 'en';
-    const cacheKey = `${track.title || ''}|${track.artist || ''}|${lang}`.toLowerCase();
+    const romanise = lang === 'hinglish';
+    const cacheKey = `${track.title || ''}|${track.artist || ''}|${romanise ? 'translit' : lang}`.toLowerCase();
 
     if (lyricsTranslationCache.has(cacheKey)) {
       state.currentTranslations = lyricsTranslationCache.get(cacheKey);
@@ -3587,12 +3589,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texts, targetLang: lang })
+        body: JSON.stringify({ texts, targetLang: lang, mode: romanise ? 'translit' : 'translate' })
       });
       const data = await res.json();
       if (data && data.success && Array.isArray(data.translations)) {
         lyricsTranslationCache.set(cacheKey, data.translations);
-        const curKey = `${(state.currentTrack && state.currentTrack.title) || ''}|${(state.currentTrack && state.currentTrack.artist) || ''}|${state.trLang || 'en'}`.toLowerCase();
+        const curKey = `${(state.currentTrack && state.currentTrack.title) || ''}|${(state.currentTrack && state.currentTrack.artist) || ''}|${(state.trLang || 'en') === 'hinglish' ? 'translit' : (state.trLang || 'en')}`.toLowerCase();
         if (curKey === cacheKey && state.trActive) {
           state.currentTranslations = data.translations;
           renderLyricsView();

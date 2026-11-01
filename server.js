@@ -2801,7 +2801,9 @@ function sanitizeForLyrics(title, artist) {
   const loose = (x) => String(x || '').toLowerCase().replace(/vevo|official|records|music|topic/g, '').replace(/[^\p{L}\p{N}]/gu, '');
   // "ImagineDragonsVEVO" -> "Imagine Dragons"
   const artistName = String(artist || '').replace(/\s-\sTopic$/i, '').replace(/VEVO$/i, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
-  let t = String(title || '').replace(/[\u2018\u2019\u02bc']/g, '').split(/\s[|\u2502]\s/)[0];
+  const bars = String(title || '').replace(/[\u2018\u2019\u02bc']/g, '').split(/\s*[|\u2502]\s*/).map((x) => x.trim()).filter(Boolean);
+  // "Coke Studio Season 10| Song": the series label is packaging, the song is the other half
+  let t = bars.find((x) => !/coke studio|season|episode|\bep\.?\s*\d|official|vevo|presents|session/i.test(x)) || bars[0] || '';
   // "Artist - Song" and "Song - Artist": the half that is the artist is dropped
   const halves = t.split(/\s[-\u2013\u2014]\s/);
   if (halves.length === 2 && loose(artistName)) {
@@ -4046,6 +4048,49 @@ function callTranslate(text, to) {
   });
 }
 
+// Romanised text ("Hinglish" for Hindi, Roman Urdu for Urdu): the transliteration Google's translate service returns
+// next to a translation. One line at a time so every line keeps its own romanisation.
+const translitCache = new Map();
+function callTransliterate(text) {
+  return new Promise((resolve) => {
+    const t = String(text || '').trim();
+    if (!t) return resolve('');
+    if (translitCache.has(t)) return resolve(translitCache.get(t));
+    const u = `https://translate.googleapis.com/translate_a/single?client=dict-chrome-ex&sl=auto&tl=en&dt=t&dt=rm&q=${encodeURIComponent(t)}`;
+    const req = https.get(u, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout: 8000 }, (res) => {
+      let b = '';
+      res.on('data', (c) => { b += c; });
+      res.on('end', () => {
+        try {
+          if (res.statusCode !== 200) return resolve(null);
+          const d = JSON.parse(b);
+          const rom = (d[0] || []).map((seg) => seg[3]).filter(Boolean).join(' ').trim();
+          if (rom) { if (translitCache.size > 4000) translitCache.clear(); translitCache.set(t, rom); }
+          resolve(rom || null);
+        } catch (e) { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+  });
+}
+
+async function handleTransliterate(req, res, lines) {
+  const out = new Array(lines.length).fill('');
+  let next = 0;
+  const worker = async () => {
+    while (next < lines.length) {
+      const i = next++;
+      const text = String(lines[i] || '');
+      const r = await callTransliterate(text);
+      out[i] = r || '';                      // empty means "nothing to show" (already Latin script, or no answer)
+    }
+  };
+  await Promise.all(Array.from({ length: 5 }, worker));
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ success: true, translations: out }));
+}
+
 async function handleTranslate(req, res, lines, to = 'en') {
   if (!Array.isArray(lines) || lines.length === 0) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -4560,6 +4605,7 @@ const server = http.createServer(async (req, res) => {
       const payload = safeJsonParse(body, {});
       const texts = payload.texts || payload.lines || [];
       const targetLang = payload.targetLang || payload.to || 'en';
+      if (payload.mode === 'translit') return handleTransliterate(req, res, Array.isArray(texts) ? texts.slice(0, 400) : []);
       handleTranslate(req, res, texts, targetLang);
     });
     return;

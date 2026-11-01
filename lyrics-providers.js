@@ -536,15 +536,25 @@ function sameArtist(candArtist, wantArtist) {
   return !!c && (c.includes(w) || w.includes(c));
 }
 
+// LRCLIB answers "server busy" (503) when it is overloaded; that is the moment most synced lyrics go missing, so ask again
+async function lrclibJson(url, headers) {
+  for (let i = 0; i < 3; i++) {
+    const j = json(await httpGet(url, { headers }));
+    if (j && !(j.statusCode >= 500)) return j;
+    await new Promise((r) => setTimeout(r, 900));
+  }
+  return null;
+}
+
 async function lrclib(q) {
   const headers = { 'User-Agent': 'Gaane/1.2 (https://www.abhishekkroy.me)' };
-  const get = json(await httpGet(urlWith('https://lrclib.net/api/get', {
+  const get = await lrclibJson(urlWith('https://lrclib.net/api/get', {
     track_name: q.title, artist_name: q.artist, album_name: q.album, duration: seconds(q.durationMs),
-  }), { headers }));
+  }), headers);
   const pick = (x) => (x && (x.syncedLyrics || x.plainLyrics)) ? answer(parseLrc(x.syncedLyrics || x.plainLyrics)) : null;
   const direct = pick(get);
   if (direct && direct.kind !== 'plain') return direct;
-  const list = json(await httpGet(urlWith('https://lrclib.net/api/search', { q: `${q.artist} ${q.title}`.trim() }), { headers }));
+  const list = await lrclibJson(urlWith('https://lrclib.net/api/search', { q: `${q.artist} ${q.title}`.trim() }), headers);
   if (Array.isArray(list) && list.length) {
     const secs = q.durationMs / 1000;
     // only the same song: a search for "Artist Title" happily answers with another song by that artist
