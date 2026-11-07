@@ -115,7 +115,7 @@
   }
 
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = 1;   // the light is soft: drawn at 1x, the three screen-sized canvases (and the GPU memory they hold) are a quarter the size
     W = window.innerWidth; H = window.innerHeight;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ring = layer(W * dpr, H * dpr); rctx = ring.getContext('2d');

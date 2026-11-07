@@ -15199,15 +15199,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (open === ambientOpen) return;
       ambientOpen = open;
       if (window.electronAPI && window.electronAPI.setFullscreen) window.electronAPI.setFullscreen(open);
-      if (window.electronAPI && window.electronAPI.setEdgeOverlay) window.electronAPI.setEdgeOverlay(open);
+      if (window.electronAPI && window.electronAPI.setEdgeOverlay) window.electronAPI.setEdgeOverlay(open && edgeGlowOn);
+      // while ambient mode covers the window, the app underneath stops being painted (frees its graphics memory)
+      document.body.classList.toggle('tvk-open', open);
       syncEdgeGlow();
     };
     new MutationObserver(apply).observe(tv, { attributes: true, attributeFilter: ['class'] });
   })();
 
   const edgeGlowEl = document.getElementById('edge-glow');
-  let edgeGlowOn = true;
-  try { edgeGlowOn = localStorage.getItem('gaane_edge_glow') !== '0'; } catch (_) {}
+  // The edge light draws on a second, screen-sized transparent window: lovely, but it costs a few hundred MB of graphics memory
+  // and keeps the GPU busy, so it is off until switched on (Settings, Live backdrop).
+  let edgeGlowOn = false;
+  try { edgeGlowOn = localStorage.getItem('gaane_edge_glow') === '1'; } catch (_) {}
   let edgeCoverKey = '';
   let edgePrev = null;
   let edgePalette = [];
@@ -15759,9 +15763,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       vmode: (window.GaaneVerse ? GaaneVerse.MODES : []).map((m) => [m.id, m.name]),
       scene: SCENES,
       where: [['ambient', 'In ambient mode'], ['app', 'Behind the whole app']],
-      wallpaper: [['0', 'Off'], ['1', 'On']]
+      wallpaper: [['0', 'Off'], ['1', 'On']],
+      edge: [['0', 'Off'], ['1', 'On']]
     };
-    const current = (k) => (k === 'verse' ? (cfg.verse ? '1' : '0') : k === 'wallpaper' ? (cfg.wallpaper ? '1' : '0') : cfg[k]);
+    const current = (k) => (k === 'verse' ? (cfg.verse ? '1' : '0') : k === 'wallpaper' ? (cfg.wallpaper ? '1' : '0') : k === 'edge' ? (edgeGlowOn ? '1' : '0') : cfg[k]);
     function paint() {
       document.querySelectorAll('[data-chips]').forEach((box) => {
         const k = box.dataset.chips;
@@ -15778,6 +15783,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       else if (k === 'scene') { cfg.scene = v; if (bd && v !== 'off') bd.setScene(v); }
       else if (k === 'where') cfg.where = v;
       else if (k === 'wallpaper') cfg.wallpaper = v === '1';
+      else if (k === 'edge') {
+        edgeGlowOn = v === '1';
+        try { localStorage.setItem('gaane_edge_glow', v); } catch (_) {}
+        if (window.electronAPI && window.electronAPI.setEdgeOverlay) window.electronAPI.setEdgeOverlay(ambientOpen && edgeGlowOn);
+        syncEdgeGlow();
+      }
       save(); paint(); place(); pushWallpaperConfig();
     }
     document.querySelectorAll('[data-chips]').forEach((box) => {
@@ -15790,6 +15801,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         box.appendChild(b);
       });
     });
+    // Live backdrop and Verse lyrics were removed (they cost a lot of graphics memory and battery): hide their controls
+    if (!window.GaaneBackdrop) document.querySelectorAll('[data-chips="scene"],[data-chips="where"],[data-chips="wallpaper"]').forEach((b) => { const r = b.closest('.setting-item,.tvk-row,details.tvk-sec'); if (r) r.style.display = 'none'; });
+    if (!window.GaaneVerse) document.querySelectorAll('[data-chips="verse"],[data-chips="vstyle"],[data-chips="vmode"]').forEach((b) => { const r = b.closest('.setting-item,.tvk-row'); if (r) r.style.setProperty('display', 'none', 'important'); });
     paint();
     document.querySelectorAll('[data-mac-only]').forEach((r) => { if (!isMac) r.style.display = 'none'; });
     setInterval(place, 500);
@@ -15800,7 +15814,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function edgePulseLoop(ts) {
     requestAnimationFrame(edgePulseLoop);
-    if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 16) return;
+    if (!ambientOpen || !edgeGlowOn || document.hidden || ts - edgeLastFrame < 33) return;
     edgeLastFrame = ts;
     try {
       const bands = new Array(28).fill(0);

@@ -132,9 +132,6 @@ button, .chip-btn, .mix-card, .track-row, .rail-icon-btn, .theme-mode-btn,
 .theme-swatch, .nav-item, .titlebar-btn, .format-chip, .quality-chip, .hq-preset-chip {
   touch-action: manipulation;
   transform-origin: center;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   image-rendering: -webkit-optimize-contrast;
   transition: background-color var(--transition-hover-out), color var(--transition-hover-out), transform 0.12s cubic-bezier(0.2, 0, 0, 1), border-radius 0.15s cubic-bezier(0.2, 0, 0, 1), opacity var(--transition-fast), filter var(--transition-fast);
 }
@@ -2685,8 +2682,6 @@ body.m3-cover-on .artwork-wrapper {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  transform: translateZ(0);
-  will-change: opacity;
   transition: opacity 250ms cubic-bezier(0.2, 0, 0, 1), visibility 0s 250ms;
 }
 .modal-backdrop.visible {
@@ -4264,8 +4259,6 @@ body.perf #sleep-timer-status.active::before {
 .full-width { width: 100%; }
 
 .btn-icon-pill, .pill-btn, button[class*="pill"] {
-  will-change: border-radius, transform;
-  transform: translateZ(0);
 }
 
 button:not(select):not(.m3-dropdown-trigger):not(.m3-dropdown-option) {
@@ -4284,8 +4277,6 @@ button:not(select):not(.m3-dropdown-trigger):not(.m3-dropdown-option):active:not
 button svg, button img, button i, .btn-icon-pill svg, .btn-row-fav svg, .action-btn svg, .nav-item svg, .rail-icon-btn svg {
   transform-origin: center;
   transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   image-rendering: -webkit-optimize-contrast;
 }
 
@@ -5717,9 +5708,6 @@ body.intensity-zero .lyric-word.active-word { opacity: 1; color: var(--md-sys-co
   width: 100%;
   cursor: pointer;
   filter: none;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
 }
 .tv-karaoke-content .lyric-translation {
   font-size: 0.55em;
@@ -7897,7 +7885,7 @@ body.mini #edge-glow { border-radius: 10px; }
 .yt-shelf { content-visibility: auto; contain-intrinsic-size: auto 340px; }
 .track-row, .yt-row-item, .stats-song, .yt-card { contain: layout style; }
 .yt-scroll, .yt-list, .yt-grid, .main-content { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-.yt-card-img img, .yt-row-item img, .stats-song img { will-change: auto; transform: translateZ(0); }
+.yt-card-img img, .yt-row-item img, .stats-song img { will-change: auto; }
 
 /* The YouTube Music home is a long page: let it scroll (the My Wave carousel view is the only fixed-height one) */
 #view-discover:has(#home-foryou:not(.hidden)) { overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; overscroll-behavior: contain; }
@@ -8204,3 +8192,7 @@ body.vibrant.live-bd-app .live-backdrop-canvas { opacity: 0.8; }
 .ls-text small { opacity: .65; font-size: 12.5px; }
 
 .lyric-translation { font-size: 0.62em; opacity: .75; font-weight: 500; margin-top: 4px; }
+
+/* Ambient mode covers the whole window: stop painting the app underneath so its layers (and graphics memory) are released */
+body.tvk-open > #fx-root, body.tvk-open > .titlebar, body.tvk-open > .top-nav, body.tvk-open > .app-layout, body.tvk-open > .playbar,
+body.tvk-open > .m3-organic-bg, body.tvk-open > #cover-bg, body.tvk-open > #bg-mesh-a, body.tvk-open > #bg-mesh-b { visibility: hidden !important; }

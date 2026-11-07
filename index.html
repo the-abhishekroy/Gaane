@@ -1124,6 +1124,15 @@
             <div class="setting-item">
               <div class="setting-item-top" style="align-items: center;">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Edge light (ambient mode)</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">A light around the screen edge that follows the music. It needs a second full-screen window, so it uses a lot more memory and makes the Mac warmer. Off by default.</span>
+                </div>
+              </div>
+              <div class="backdrop-pills" data-chips="edge" data-pill="backdrop"></div>
+            </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span class="setting-name">Lyrics view in ambient mode</span>
                   <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Classic scrolls all the lines. Verse shows one very large line and each word rises into place as it is sung.</span>
                 </div>
@@ -1141,14 +1150,7 @@
               <div class="setting-item-top" style="margin-top:10px;"><span class="setting-name">Verse colours</span></div>
               <div class="backdrop-pills" data-chips="vmode" data-pill="backdrop"></div>
             </div>
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Where to see them</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Open ambient mode with the expand button on the playing screen or the F key. Inside it, the settings button at the top right has the same options (Lyrics view, Verse style, Verse colours, Live backdrop).</span>
-                </div>
-              </div>
-            </div>
+            
                 </div>
               </div>
 
@@ -3177,8 +3179,6 @@
   </aside>
   <div class="mix-badge hidden" id="mix-badge">Mixing</div>
   <div class="nerd-stats hidden" id="nerd-stats" aria-hidden="true"></div>
-  <script src="live-backdrop.js"></script>
-  <script src="verse-view.js"></script>
   <script src="queue-core.js"></script>
   <script src="audio-engine.js"></script>
   <script src="mix-analysis.js"></script>
