@@ -11,6 +11,17 @@
 
 ---
 
+## What's new in 1.2.9
+
+- **Lighter and cooler, especially in ambient mode.** Ambient mode used to take about 1 GB of memory (mostly graphics memory); it now stays near the normal playing level. Every button, row and cover is no longer its own graphics layer (222 layers became about 25), and the app underneath is no longer painted while ambient mode covers it.
+- **Live backdrop and Verse lyrics are gone** (the 3D backdrops alone added about 180 MB and kept the GPU busy).
+- **The edge light is now an option** (Settings, Live backdrop, Edge light), off by default: it needs a second full-screen window that cost a few hundred MB. When on, it draws at 1x and 30 frames a second.
+
+## What's new in 1.2.8 / 1.2.7
+
+- The mini player and edge light windows are only created when used. Audio and network services run inside the main process, and hls.js loads only for HLS streams.
+- A "Hinglish (Roman letters)" entry in the translate language list shows Hindi and Urdu lyrics in English letters; titles like "Coke Studio Season 10| Song" now find synced lyrics; LRCLIB is retried when busy.
+
 ## What's new in 1.2.6
 
 - **Lyrics follow BitChord's rule.** Every source is asked at once but answers are taken in priority order, and plain text is only used when no synced lyrics exist anywhere. Before, a fast plain-text answer could beat slower synced lyrics, which left lyrics not moving at all.
