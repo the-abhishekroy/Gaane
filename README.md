@@ -11,6 +11,10 @@
 
 ---
 
+## What's new in 1.2.10
+
+- Cleaned up everything that was left over from the removed Live backdrop and Verse lyrics: the Live backdrop tab in Settings, the Live backdrop and Verse groups in the ambient settings panel, and their text. The Edge light option now sits under Settings, Interface.
+
 ## What's new in 1.2.9
 
 - **Lighter and cooler, especially in ambient mode.** Ambient mode used to take about 1 GB of memory (mostly graphics memory); it now stays near the normal playing level. Every button, row and cover is no longer its own graphics layer (222 layers became about 25), and the app underneath is no longer painted while ambient mode covers it.

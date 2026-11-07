@@ -546,14 +546,7 @@
                 </svg>
                 <span>Banners</span>
               </button>
-              <button class="settings-nav-btn" data-cat="backdrop">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>
-                  <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/>
-                </svg>
-                <span>Live backdrop</span>
-              </button>
-              <button class="settings-nav-btn" data-cat="playback">
+                            <button class="settings-nav-btn" data-cat="playback">
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="12" cy="12" r="9"/>
                   <polygon points="10 8 16 12 10 16 10 8" fill="currentColor"/>
@@ -836,6 +829,15 @@
                 <button class="effect-switch-btn" id="btn-perf-mode"><span class="thumb"></span></button>
               </div>
             </div>
+            <div class="setting-item">
+              <div class="setting-item-top" style="align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <span class="setting-name">Edge light (ambient mode)</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">A light around the screen edge that follows the music. It needs a second full-screen window, so it uses a lot more memory and makes the Mac warmer. Off by default.</span>
+                </div>
+              </div>
+              <div class="backdrop-pills" data-chips="edge" data-pill="backdrop"></div>
+            </div>
                 </div>
               </div>
 
@@ -1095,62 +1097,6 @@
               <input type="range" class="pill-range" id="slider-cover-bg-brightness" min="5" max="100" step="5" value="45">
               <div class="setting-hints"><span>5%</span><span>50%</span><span>100%</span></div>
             </div>
-                </div>
-              </div>
-
-              <div class="settings-section" data-cat="backdrop">
-                <div class="m3-group">
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Live backdrop</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">An animated background that moves with the music, painted in the cover's colours</span>
-                </div>
-              </div>
-              <div class="backdrop-pills" data-chips="scene" data-pill="backdrop"></div>
-              <div class="setting-item-top" style="margin-top:10px;"><span class="setting-name">Show it</span></div>
-              <div class="backdrop-pills" data-chips="where" data-pill="backdrop"></div>
-            </div>
-
-            <div class="setting-item" data-mac-only>
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Live wallpaper (macOS)</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Draws the backdrop as your desktop wallpaper on every screen, behind your icons and windows, moving with the music. macOS does not let apps draw on the lock screen, so that stays your normal wallpaper. Uses the scene chosen above (Aurora if Off).</span>
-                </div>
-              </div>
-              <div class="backdrop-pills" data-chips="wallpaper" data-pill="backdrop"></div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Edge light (ambient mode)</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">A light around the screen edge that follows the music. It needs a second full-screen window, so it uses a lot more memory and makes the Mac warmer. Off by default.</span>
-                </div>
-              </div>
-              <div class="backdrop-pills" data-chips="edge" data-pill="backdrop"></div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Lyrics view in ambient mode</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Classic scrolls all the lines. Verse shows one very large line and each word rises into place as it is sung.</span>
-                </div>
-              </div>
-              <div class="backdrop-pills" data-chips="verse" data-pill="backdrop"></div>
-            </div>
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Verse style</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);" id="verse-style-note">One word at a time, timed to the song</span>
-                </div>
-              </div>
-              <div class="backdrop-pills" data-chips="vstyle" data-pill="backdrop"></div>
-              <div class="setting-item-top" style="margin-top:10px;"><span class="setting-name">Verse colours</span></div>
-              <div class="backdrop-pills" data-chips="vmode" data-pill="backdrop"></div>
-            </div>
-            
                 </div>
               </div>
 
@@ -2916,19 +2862,7 @@
       </svg>
     </button>
     <div class="tvk-panel" id="tvk-panel">
-      <details class="tvk-sec" open><summary>Lyrics view</summary>
-      <div class="tvk-row">
-        <span class="tvk-label">Lyrics view</span>
-        <div class="tvk-pill-group verse-chips" data-chips="verse" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row" data-verse-only>
-        <span class="tvk-label">Verse style</span>
-        <div class="tvk-pill-group verse-chips" data-chips="vstyle" data-pill="tvk"></div>
-      </div>
-      <div class="tvk-row" data-verse-only>
-        <span class="tvk-label">Verse colours</span>
-        <div class="tvk-pill-group verse-chips" data-chips="vmode" data-pill="tvk"></div>
-      </div>
+      <details class="tvk-sec" open><summary>Lyrics</summary>
       <div class="tvk-row">
         <div class="tvk-row-header">
           <span class="tvk-label">Lyrics timing (this song)</span>
@@ -2940,12 +2874,6 @@
       </details>
       <details class="tvk-sec"><summary>Lyrics source</summary>
       <div class="tvk-row"><span class="tvk-label" id="tvk-lyrics-credit">Lyrics</span><button type="button" class="tvk-pill-btn" id="btn-tvk-lyrics-source" style="flex:0 0 auto">Choose source</button></div>
-      </details>
-      <details class="tvk-sec" open><summary>Live backdrop</summary>
-      <div class="tvk-row">
-        <span class="tvk-label">Live backdrop</span>
-        <div class="tvk-pill-group verse-chips" data-chips="scene" data-pill="tvk"></div>
-      </div>
       </details>
       <details class="tvk-sec"><summary>Text</summary>
       <div class="tvk-row">
