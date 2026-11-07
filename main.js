@@ -54,6 +54,13 @@ if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 
+// Fewer helper processes: the audio and network services run inside the main process instead of one process each.
+// RIFF_FULL_PROCESSES=1 puts them back if a machine misbehaves.
+if (process.platform === 'darwin' && process.env.RIFF_FULL_PROCESSES !== '1') {
+  enabledFeatures.push('NetworkServiceInProcess');
+  app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess,SpareRendererForSitePerProcess,CalculateNativeWinOcclusion');
+}
+
 if (enabledFeatures.length > 0) {
   app.commandLine.appendSwitch('enable-features', enabledFeatures.join(','));
 }
@@ -405,8 +412,13 @@ function runGUI() {
   }
 
   let edgeTimer = null;
+  let edgeDropTimer = null;
   ipcMain.on('edge-overlay', (e, on) => {
     edgeWanted = !!on;
+    // each helper window is a whole Chromium renderer (~80 MB): made when ambient mode opens, dropped a while after it closes
+    clearTimeout(edgeDropTimer);
+    if (edgeWanted) { try { ensureEdgeOverlay(); } catch (e) { logger.error('edge overlay', e); } }
+    else edgeDropTimer = setTimeout(() => { if (!edgeWanted && edgeOverlay && !edgeOverlay.isDestroyed()) { edgeOverlay.destroy(); edgeOverlay = null; } }, 45000);
     updateEdgeOverlay();
     // keep reconciling while ambient mode is open, so the light always follows the real focus/fullscreen state
     clearInterval(edgeTimer);
@@ -509,14 +521,20 @@ function runGUI() {
 
   function showMini() {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    clearTimeout(miniDropTimer);
     ensureMini();
     miniWin.setAlwaysOnTop(true, 'screen-saver');
     miniWin.showInactive();
     try { mainWindow.webContents.setBackgroundThrottling(false); } catch (_) {}
   }
 
+  let miniDropTimer = null;
   function hideMini() {
-    if (miniWin && !miniWin.isDestroyed()) miniWin.hide();
+    if (miniWin && !miniWin.isDestroyed()) {
+      miniWin.hide();
+      clearTimeout(miniDropTimer);
+      miniDropTimer = setTimeout(() => { if (miniWin && !miniWin.isDestroyed() && !miniWin.isVisible()) { miniWin.destroy(); miniWin = null; } }, 20000);
+    }
     try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.setBackgroundThrottling(true); } catch (_) {}
   }
 
@@ -530,7 +548,6 @@ function runGUI() {
     if (openAmbient) mainWindow.webContents.send('mini-command', { cmd: 'ambient' });
   }
 
-  app.whenReady().then(() => setTimeout(() => { try { ensureEdgeOverlay(); ensureMini(); } catch (e) { logger.error('overlay setup', e); } }, 2500));
 
   ipcMain.on('mini-open', () => {
     showMini();

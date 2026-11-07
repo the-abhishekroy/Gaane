@@ -3074,6 +3074,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       el.nativeAudio.preload = 'auto';
 
+      // hls.js is only needed for HLS streams, so it is loaded the first time one shows up
+      if (data.isHls && !window.Hls) {
+        await new Promise((res) => { const s = document.createElement('script'); s.src = 'assets/hls.min.js'; s.onload = s.onerror = res; document.head.appendChild(s); });
+      }
       if (data.isHls && window.Hls && Hls.isSupported()) {
         hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true, maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 30 * 1000 * 1000 });
         hlsInstance.loadSource(data.streamUrl);
