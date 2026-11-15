@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520" role="img" aria-label="How Gaane plays: sources, helpers, audio engine, output, with lyrics and listening stats alongside">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#FF4FA3"/><stop offset="1" stop-color="#7A66FF"/></linearGradient>
+  </defs>
+  <rect width="1200" height="520" fill="#050507"/>
+  <g font-family="-apple-system, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif">
+    <!-- column titles -->
+    <g font-size="14" font-weight="700" fill="#8F8FA3" letter-spacing="2">
+      <text x="40" y="44">SOURCES</text><text x="330" y="44">FETCH</text><text x="620" y="44">AUDIO ENGINE</text><text x="940" y="44">YOU HEAR</text>
+    </g>
+    <!-- sources -->
+    <g font-size="17" fill="#FFFFFF">
+      <rect x="40" y="62" width="230" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="62" y="100">YouTube</text>
+      <rect x="40" y="140" width="230" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="62" y="178">YouTube Music (your account)</text>
+      <rect x="40" y="218" width="230" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="62" y="256">SoundCloud</text>
+      <rect x="40" y="296" width="230" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="62" y="334">Your files (FLAC, MP3, M4A…)</text>
+    </g>
+    <!-- fetch -->
+    <rect x="330" y="62" width="230" height="298" rx="16" fill="#101014" stroke="#26262E"/>
+    <g font-size="17" fill="#FFFFFF">
+      <text x="352" y="100" font-weight="600">yt-dlp + ffmpeg</text>
+      <text x="352" y="128" font-size="14" fill="#8F8FA3">picks the fastest helper at start-up</text>
+      <text x="352" y="176" font-weight="600">Look-ahead</text>
+      <text x="352" y="204" font-size="14" fill="#8F8FA3">resolves the next 3 songs while</text>
+      <text x="352" y="224" font-size="14" fill="#8F8FA3">one plays: next starts in ~0.1 s</text>
+      <text x="352" y="272" font-weight="600">Downloads</text>
+      <text x="352" y="300" font-size="14" fill="#8F8FA3">tags and cover art included</text>
+    </g>
+    <!-- engine -->
+    <rect x="620" y="62" width="270" height="298" rx="16" fill="#101014" stroke="url(#g)" stroke-width="2.5"/>
+    <g font-size="17" fill="#FFFFFF">
+      <text x="642" y="100" font-weight="600">Two decks</text>
+      <text x="642" y="128" font-size="14" fill="#8F8FA3">real crossfade and Automix:</text>
+      <text x="642" y="148" font-size="14" fill="#8F8FA3">beat-matched, key-aware blends</text>
+      <text x="642" y="196" font-weight="600">10-band EQ, tempo, pitch</text>
+      <text x="642" y="224" font-size="14" fill="#8F8FA3">reverb, spatial audio,</text>
+      <text x="642" y="244" font-size="14" fill="#8F8FA3">skip silence</text>
+      <text x="642" y="292" font-weight="600">Analysis</text>
+      <text x="642" y="320" font-size="14" fill="#8F8FA3">tempo, outro and key per song</text>
+    </g>
+    <!-- output -->
+    <g font-size="17" fill="#FFFFFF">
+      <rect x="940" y="62" width="220" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="962" y="100">Speakers / Bluetooth</text>
+      <rect x="940" y="140" width="220" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="962" y="178">Lyrics in time</text>
+      <rect x="940" y="218" width="220" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="962" y="256">Ambient + edge light</text>
+      <rect x="940" y="296" width="220" height="64" rx="16" fill="#101014" stroke="#26262E"/><text x="962" y="334">Mini player, Discord</text>
+    </g>
+    <!-- arrows -->
+    <g stroke="url(#g)" stroke-width="4" fill="none" stroke-linecap="round">
+      <line x1="276" y1="211" x2="322" y2="211"/><line x1="566" y1="211" x2="612" y2="211"/><line x1="896" y1="211" x2="932" y2="211"/>
+    </g>
+    <g fill="#B79BFF"><polygon points="324,211 312,203 312,219"/><polygon points="614,211 602,203 602,219"/><polygon points="934,211 922,203 922,219"/></g>
+    <!-- lyrics and stats strip -->
+    <rect x="40" y="392" width="545" height="96" rx="16" fill="#101014" stroke="#26262E"/>
+    <text x="62" y="424" font-size="17" font-weight="600" fill="#FFFFFF">Lyrics: ten sources at once</text>
+    <text x="62" y="450" font-size="14" fill="#8F8FA3">answers taken in priority order, word-by-word when available,</text>
+    <text x="62" y="470" font-size="14" fill="#8F8FA3">plain text only if no synced lyrics exist anywhere</text>
+    <rect x="615" y="392" width="545" height="96" rx="16" fill="#101014" stroke="#26262E"/>
+    <text x="637" y="424" font-size="17" font-weight="600" fill="#FFFFFF">Your listening stays on your Mac</text>
+    <text x="637" y="450" font-size="14" fill="#8F8FA3">minutes, top artist, streaks and peak hour are counted locally.</text>
+    <text x="637" y="470" font-size="14" fill="#8F8FA3">No telemetry. Optional ListenBrainz scrobbling.</text>
+  </g>
+</svg>

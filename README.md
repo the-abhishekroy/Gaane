@@ -1,109 +1,107 @@
-<p align="center">
-  <img src="docs/banner.png" alt="Gaane" width="100%">
-</p>
+<div align="center">
 
-<h1 align="center">Gaane</h1>
+<img src="docs/banner.png" alt="Gaane: a desktop music player for YouTube Music, your library and your listening" width="100%"/>
 
-<p align="center">
-  A desktop music player for macOS (also Windows and Linux builds) that plays YouTube, YouTube Music, SoundCloud and your own files, and shows you how you listen.<br>
-  Made with love by <a href="https://www.abhishekkroy.me">Abhishek Roy</a>.
-</p>
+<br/>
 
----
+**A music player that plays YouTube, YouTube Music, SoundCloud and your own files, blends songs like a DJ, shows lyrics in time, and tells you how you listen.**
+Everything about your listening stays on your computer.
 
-## What's new in 1.2.10
+<br/>
 
-- Cleaned up everything that was left over from the removed Live backdrop and Verse lyrics: the Live backdrop tab in Settings, the Live backdrop and Verse groups in the ambient settings panel, and their text. The Edge light option now sits under Settings, Interface.
+[![Download](https://img.shields.io/badge/Download-latest%20release-FF4FA3?style=for-the-badge&labelColor=000000)](../../releases/latest)
 
-## What's new in 1.2.9
+![macOS](https://img.shields.io/badge/macOS-Apple%20silicon-000000?logo=apple&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-build-0078D4?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-build-FCC624?logo=linux&logoColor=black)
+![Electron](https://img.shields.io/badge/Electron-41-47848F?logo=electron&logoColor=white)
+![No telemetry](https://img.shields.io/badge/Telemetry-none-7A66FF)
+![License](https://img.shields.io/badge/License-MIT-FF4FA3)
 
-- **Lighter and cooler, especially in ambient mode.** Ambient mode used to take about 1 GB of memory (mostly graphics memory); it now stays near the normal playing level. Every button, row and cover is no longer its own graphics layer (222 layers became about 25), and the app underneath is no longer painted while ambient mode covers it.
-- **Live backdrop and Verse lyrics are gone** (the 3D backdrops alone added about 180 MB and kept the GPU busy).
-- **The edge light is now an option** (Settings, Live backdrop, Edge light), off by default: it needs a second full-screen window that cost a few hundred MB. When on, it draws at 1x and 30 frames a second.
+[Features](#-features) · [Screenshots](#-screenshots) · [Install](#-install) · [Connect YouTube Music](#-connect-youtube-music) · [How it works](#-how-it-works) · [Run from source](#-run-from-source) · [Changelog](CHANGELOG.md)
 
-## What's new in 1.2.8 / 1.2.7
+</div>
 
-- The mini player and edge light windows are only created when used. Audio and network services run inside the main process, and hls.js loads only for HLS streams.
-- A "Hinglish (Roman letters)" entry in the translate language list shows Hindi and Urdu lyrics in English letters; titles like "Coke Studio Season 10| Song" now find synced lyrics; LRCLIB is retried when busy.
+<br/>
 
-## What's new in 1.2.6
+## ✨ What it feels like
 
-- **Lyrics follow BitChord's rule.** Every source is asked at once but answers are taken in priority order, and plain text is only used when no synced lyrics exist anywhere. Before, a fast plain-text answer could beat slower synced lyrics, which left lyrics not moving at all.
-- **Choose the lyrics provider** (globe button by the lyrics, or Lyrics source in the ambient settings), "Lyrics are loading" while they are found, and a "Mixing" badge while Automix blends.
-- **Account menu** in the top-right corner, like BitChord's: your YouTube Music account with name and picture, Add account, Manage accounts (sign out) and Settings. The Connect and Disconnect buttons are gone.
-- A safety net so a hand-over between songs can never leave the lyrics stuck.
+You press play and the song starts at once, because Gaane already looked up the next three. When one song ends, the next one is blended in on a beat, in a compatible key. Lyrics light up word by word. Go fullscreen and a soft light follows the cover's colours around your screen. At the end of the week you see your minutes, your top artist and your streak, counted on your own machine.
 
-## What's new in 1.2.5
+## 🚀 Features
 
-- **Wrong lyrics fixed.** A search for "Artist Title" could land on another song by the same artist. Lyric matches now have to be the same song (by name and artist), the artist is taken out of titles like "Imagine Dragons - Believer (Official Music Video)" and out of channel names like "ImagineDragonsVEVO", credit lines that some sources stamp as lyrics ("Lyrics by: ...") are dropped, and lyrics saved by earlier versions are refreshed.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## What's new in 1.2.4
+### 🎧 Play everything
+**YouTube, YouTube Music and SoundCloud**, plus local FLAC, WAV, MP3, OGG and M4A. Search with live suggestions and recent searches. Your YouTube Music **Home, Explore, likes, library and history** appear inside the app.
 
-- **Lyrics for far more songs.** Gaane now asks ten sources at once, in BitChord's order: lrc.red, BiniLyrics, BetterLyrics (Apple and QQ Music timings), LyricsPlus, Unison, KuGou, LRCLIB, YouTube Music's own Lyrics tab and lyrics.ovh. Titles in Hindi, Nepali and other scripts are no longer stripped bare before searching, and a song is tried under a shorter name if the full one finds nothing. A version of the lyrics that is longer than the song is rejected, and the best-ranked source wins.
-- **The play button no longer sticks on "loading"** after Automix hands over to the next song.
-- **Colours follow the cover.** The edge light and the live backdrop now use the cover's own colours in proportion, so a grey or brown cover is no longer painted bright green.
-- **Faster Automix.** The new song joins the blend about 30 ms after it starts instead of up to a second.
-- **The queue sits inside the app** over the lyrics card, in the app's own colours, shows song lengths and keeps at least ten songs coming with AutoPlay on.
+</td>
+<td width="50%" valign="top">
 
-## What's new in 1.2.3 / 1.2.2
+### 🔀 Blends like a DJ
+**Crossfade** (0 to 12 s) is a real overlap on two decks. **Automix [Beta]** analyses tempo, outro and key, starts the blend on a beat, matches tempo, swaps the bass across the blend, and skips silent intros.
 
-- **Sign in like a normal app.** Press Connect, sign in on Google's own page in a browser window (your default browser if it is Chrome, Brave, Edge or Arc; otherwise another one you have installed; Safari cannot be used for this step) that Gaane opens and closes for you. No cookie copying. The window is a private profile of its own, so the login is not changed behind Gaane's back and stays put.
-- **The next song starts at once.** Gaane now looks up the next three songs while one plays (it only did one, and only halfway through), so Next and the end of a song start the next song in about a tenth of a second instead of 3 seconds.
-- **Queue panel.** A Queue button in the bottom bar and in ambient mode opens a panel like BitChord's: Now playing, the songs coming up, an AutoPlay section, drag to reorder, a cross to remove, and shuffle, repeat and AutoPlay at the bottom.
-- **Breaks in the music.** Lyrics show "..." for intros, solos and other instrumental stretches instead of keeping the last line lit, and the credit shows which source the lyrics came from.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-## What's new in 1.2.1
+### 📝 Lyrics in time
+Ten sources asked at once, answers taken in priority order, **word-by-word** when available, a fullscreen view, a translate option (including Hinglish) and a timing nudge per song.
 
-- **Live wallpaper (macOS).** Settings, Live backdrop: draw the backdrop as your desktop wallpaper on every screen, behind your icons and windows, moving with the music. (macOS does not allow apps to draw on the lock screen.)
-- **Better Live backdrop.** Two new lit 3D voxel scenes (Voxel city, Voxel dunes) next to the dotted and flat ones, all in the cover's colours.
-- **Verse lyrics.** Word-by-word lyrics in eight styles (Reel, Glide, Elastic, Cascade, Orbit, Surge, Echo, Halo) with colour harmonies from the cover.
-- **Lyrics in time with what you hear.** The lyric clock allows for output delay (Bluetooth), the next song's lyrics are fetched ahead, and each song has its own timing nudge.
-- **One-time YouTube Music login.** Gaane refreshes the session itself like a browser does and never signs you out on a hiccup. Connect from a private window and close it afterwards.
-- **A tidier ambient settings panel:** scrolls, with collapsible groups and smaller buttons.
+</td>
+<td width="50%" valign="top">
 
-## What's new in 1.2
+### 📊 Your listening
+Minutes listened, top artist, song and album, streak, peak hour and busiest day for the week, month, year or all time. **Counted only on your computer.**
 
-- **Word-by-word lyrics from many sources.** Gaane asks lrc.red, BiniLyrics, LyricsPlus, BetterLyrics, Unison and LRCLIB at once and uses the best answer, preferring lyrics timed to each word. Fixed lyrics that got stuck on one line when a source sent unsynced text.
-- **Search suggestions** while you type (from YouTube Music), plus your recent searches.
-- **A queue that behaves like the big apps.** Playing a song from search plays just that song, then similar songs (not the next search result). Songs you add by hand play before the rest, shuffle plays each song once, and repeat now goes off, all, one. Clear queue removes only what you added. The Queue page says where the music comes from.
-- **Smoother edge light.** One cover colour flows into the next instead of separate blocks.
-- **Live backdrop** (Settings, Appearance): Aurora, Voxel wall, Contours or Ripples, moving with the music in the cover's colours, in ambient mode or behind the whole app.
-- **Verse lyrics view** in ambient mode: very large lyrics where each word rises into place as it is sung.
-- **Scrobble to ListenBrainz**, **Stats for nerds** panel, and a click on the total time to see the time remaining.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-## What's new in 1.0
+### 🌌 Ambient fullscreen
+Lyrics, visualizer and controls on a calm backdrop, with a thin light around the whole screen (curving around the notch) in the cover's own colours.
 
-- **Your YouTube Music, inside Gaane.** Connect your account and your Home (Quick picks, Speed dial, Listen again, mixes, mood chips and more), Explore, liked songs, library and history appear in the app, laid out like YouTube Music.
-- **One Home.** My Wave when you are signed out, your YouTube Music Home when you are connected. One place to browse everything.
-- **Liked songs are combined.** Favorites shows your Gaane favorites and your YouTube Music likes as one list.
-- **Your listening.** Minutes listened, top artist, top song, top album, plus streak, peak hour and busiest day, for this week, month, year or all time. Everything is counted on your Mac only.
-- **Ambient fullscreen.** Lyrics, visualizer and controls on a calm backdrop, with a thin light around the whole screen (curving around the notch) that uses only the colours of the cover and moves with the music.
-- **Pinned mini player.** A Now Playing style card that stays on top of every app and desktop, with minimise, normal view, fullscreen and close.
-- **Frosted window on macOS.** Your wallpaper shows as a plain blur behind every screen.
-- **Branded installer** with a drag-to-Applications window.
-- **Better playback** (Settings, Playback):
-  - **Crossfade** (0 to 12 s) that is a real overlap: the song that is ending keeps playing on a second deck while the next one fades in.
-  - **Automix [Beta]**, in the spirit of Apple Music's: it analyses each song (tempo, outro, key), starts the blend on a beat of the outgoing song, speeds the incoming song up or down by a few percent to match the tempo, lines up the beats, swaps the bass across the blend, gives songs in compatible keys a longer blend and clashing keys a short one, and skips a silent intro.
-  - **Skip silence**, **Spatial audio** (stereo widening) and **AutoPlay** (similar songs when the queue runs out, from YouTube Music's radio).
+</td>
+<td width="50%" valign="top">
 
-<p align="center">
-  <img src="docs/listening.png" alt="Your listening" width="90%">
-</p>
+### 🎚️ Sound your way
+10-band equalizer, tempo, pitch, reverb, **spatial audio**, skip silence, a simple audio editor, and downloads with tags and cover art.
 
-## Features
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-- Plays **YouTube, YouTube Music and SoundCloud**, plus local FLAC, WAV, MP3, OGG and M4A files
-- Synced lyrics (with a fullscreen view), 10-band equalizer, tempo, pitch, reverb and a simple audio editor
-- Downloads with tags and cover art, playlists, playlist import (Spotify, Apple Music, YouTube Music, SoundCloud)
-- Themes with colours taken from the album art, a CSS editor and plugins
-- Keyboard shortcuts (Space, M mute, H shuffle, R repeat, F fullscreen ambient, P mini player)
-- Discord Rich Presence
+### 🧩 A pinned mini player
+A Now Playing card that stays above every app, plus keyboard shortcuts: `Space`, `M` mute, `H` shuffle, `R` repeat, `F` ambient, `P` mini player.
 
-## Install (macOS, Apple Silicon)
+</td>
+<td width="50%" valign="top">
 
-1. Download `Gaane-<version>-mac-arm64.dmg` from the Releases page and open it.
+### 🔌 Make it yours
+Themes with colours taken from the album art, a CSS editor and plugins. Playlist import from Spotify, Apple Music, YouTube Music and SoundCloud. Discord Rich Presence. Optional ListenBrainz scrobbling.
+
+</td>
+</tr>
+</table>
+
+## 📸 Screenshots
+
+<div align="center">
+<img src="docs/listening.png" width="860" alt="Your listening: minutes, top artist, top song, streak and top songs"/>
+</div>
+
+## 📦 Install
+
+**macOS (Apple silicon)**
+
+1. Download `Gaane-<version>-mac-arm64.dmg` from [Releases](../../releases/latest) and open it.
 2. Drag **Gaane** onto **Applications**.
-3. The app is not signed, so the first time right-click it and choose **Open**. If macOS says it is damaged, run:
+3. The app is not signed. The first time, right-click it and choose **Open**. If macOS says it is damaged, run:
    ```bash
    xattr -cr /Applications/Gaane.app
    ```
@@ -114,19 +112,21 @@
 
 Gaane ejects its own installer disk the first time you open it from Applications.
 
-## Connect YouTube Music
+## 🔑 Connect YouTube Music
 
-Google does not allow sign-in inside apps, so Gaane uses a session from your own browser, once:
+Press **Connect** on Home and sign in on Google's own page, in a browser window that Gaane opens and closes for you. It uses your default browser if that is Chrome, Brave, Edge or Arc, otherwise another one you have installed (Safari cannot be used for this step). No cookie copying. The window is a private profile of its own, so your login stays put.
 
-1. Open music.youtube.com in your browser and make sure you are signed in.
-2. Open the developer tools, go to the Network tab, reload, click any request to music.youtube.com and copy the value of its **Cookie** request header.
-3. In Gaane, click **Connect YouTube Music** on Home, paste the value and press Connect.
+Your session is stored encrypted on your computer and only sent to YouTube Music. Disconnect any time from the account menu.
 
-The cookie is stored encrypted on your Mac and only sent to YouTube Music. Treat it like a password. Disconnect any time from Home.
+## 🧠 How it works
 
-## Run from source
+<div align="center">
+<img src="docs/how-it-works.svg" alt="Sources go through yt-dlp and ffmpeg into a two-deck audio engine, then to your speakers, lyrics, ambient view and mini player" width="100%"/>
+</div>
 
-Requires Node.js 18 or newer.
+## 🛠️ Run from source
+
+Needs Node.js 18 or newer.
 
 ```bash
 npm install
@@ -135,10 +135,18 @@ npm test           # unit tests
 npm run dist:dmg   # build the macOS DMG into dist/
 ```
 
-## Privacy
+## 🔒 Privacy
 
-No telemetry. Settings, your listening stats and your library stay on your machine.
+No telemetry. Your settings, your listening stats and your library stay on your machine.
 
-## Credits and licence
+## 🤝 Credits and licence
 
 Gaane started from the open-source Riff player (MIT). The listening-stats, queue and lyrics-source ideas were inspired by BitChord, and the live backdrop and Verse view are original work inspired by the idea of music-reactive wallpapers (they use none of VoxelWall's code or art); Automix is written from scratch for Gaane (BitChord's own Automix engine is AGPL and is not used). See [LICENSE](LICENSE).
+
+---
+
+<div align="center">
+
+**Made with ♥ by [Abhishek Roy](https://www.abhishekkroy.me)**
+
+</div>
